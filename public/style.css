@@ -260,3 +260,19 @@ audio { width: 100%; }
   .toolgrid { grid-template-columns: minmax(0, 1fr); }
   .seg-btn { font-size: 12.5px; }
 }
+
+/* «хэдэн секундээс хэдэн секунд хүртэл» */
+.rangeinputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.rangein { display: grid; gap: 4px; padding: 10px 12px; background: var(--bg); border-radius: 12px; cursor: text; }
+.rangein .lbl { font-weight: 700; font-size: 14px; }
+.rangein .unit { color: var(--muted); font-size: 13px; }
+.rangein input {
+  width: 100%; min-width: 0; font: inherit; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--text); background: var(--card); border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 10px;
+}
+.rangein input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.rangein input.bad { border-color: var(--cut); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cut) 20%, transparent); }
+.rangein input::placeholder { color: var(--muted); font-weight: 400; font-size: 16px; }
+.small-note { font-size: 13px; margin: 8px 0 6px; }
+.selhint { margin: 6px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.selhint.err { background: color-mix(in srgb, var(--cut) 14%, var(--card)); color: var(--cut); }

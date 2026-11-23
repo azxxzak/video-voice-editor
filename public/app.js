@@ -494,11 +494,97 @@ function updateAudioUI() {
   $('#aCurT').textContent = fmt(cursor);
   $('#aUndo').disabled = undoStack.length === 0;
   for (const id of ['aTrim', 'aCut', 'aSilence']) $('#' + id).disabled = !sel;
-  $('#aSelHint').textContent = sel
-    ? `Сонгосон хэсэг: ${fmt(sel.a)} → ${fmt(sel.b)}`
-    : 'Эхлээд долгион дээр чирж хэсэг сонгоно уу.';
+  syncRangeInputs();
   if (!curSrc) setPlayUI(false); // «Тоглуулах» / «Сонгосныг тоглуулах» бичвэр
   drawWave();
+}
+
+/* ---- «хэдэн секундээс хэдэн секунд хүртэл» талбар ---- */
+// "10", "10.5", "10,5", "1:05", "1:05.5", "0:01:05" → секунд
+function parseTime(str) {
+  const s = String(str).trim().replace(/,/g, '.').replace(/\s*(с|сек|секунд|s|sec)\.?$/i, '');
+  if (!s) return NaN;
+  const parts = s.split(':');
+  if (parts.length > 3) return NaN;
+  let t = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (!/^\d+(\.\d*)?$|^\.\d+$/.test(p)) return NaN;
+    if (i > 0 && parseFloat(p) >= 60) return NaN; // 1:75 гэх мэт буруу
+    t = t * 60 + parseFloat(p);
+  }
+  return t;
+}
+const secText = (t) => String(Math.round(t * 100) / 100);
+const fromIn = $('#aFrom');
+const toIn = $('#aTo');
+let rangeError = '';
+
+function syncRangeInputs() {
+  const hint = $('#aSelHint');
+  // хэрэглэгч бичиж байх үед талбарыг дарж бичихгүй
+  const typing = document.activeElement === fromIn || document.activeElement === toIn;
+  if (!typing) {
+    fromIn.value = sel ? secText(sel.a) : '';
+    toIn.value = sel ? secText(sel.b) : '';
+    fromIn.classList.remove('bad');
+    toIn.classList.remove('bad');
+    rangeError = '';
+  }
+  if (rangeError) {
+    hint.textContent = rangeError;
+    hint.classList.add('err');
+  } else {
+    hint.classList.remove('err');
+    hint.textContent = sel
+      ? `Сонгосон: ${secText(sel.a)} – ${secText(sel.b)} секунд (${secText(sel.b - sel.a)} секунд). Доороос «Устгах» дарвал энэ хэсэг хасагдана.`
+      : abuf
+        ? `Нийт урт ${secText(abuf.duration)} секунд. Хэсэг сонгоно уу.`
+        : 'Эхлээд хэсэг сонгоно уу.';
+  }
+}
+
+function applyRangeInputs() {
+  if (!abuf) return;
+  const dur = abuf.duration;
+  const a = parseTime(fromIn.value);
+  const b = parseTime(toIn.value);
+  const fromBlank = !fromIn.value.trim();
+  const toBlank = !toIn.value.trim();
+  fromIn.classList.toggle('bad', !fromBlank && isNaN(a));
+  toIn.classList.toggle('bad', !toBlank && isNaN(b));
+  rangeError = '';
+  if (fromBlank || toBlank) {
+    sel = null; // хоёулаа бичигдээгүй байна
+  } else if (isNaN(a) || isNaN(b)) {
+    rangeError = 'Тоо буруу байна. Жишээ нь 10, 12.5 эсвэл 1:05 гэж бичнэ үү.';
+  } else if (a >= dur) {
+    fromIn.classList.add('bad');
+    rangeError = `Эхлэх цаг хэт их байна. Нийт урт ${secText(dur)} секунд.`;
+  } else if (b <= a) {
+    toIn.classList.add('bad');
+    rangeError = '«Дуусах» нь «Эхлэх»-ээс их байх ёстой.';
+  } else {
+    // «Дуусах» нь нийт уртаас хэтэрвэл төгсгөл хүртэл гэж үзнэ
+    sel = { a: Math.max(0, a), b: Math.min(dur, b) };
+  }
+  if (rangeError) sel = null;
+  updateAudioUI();
+}
+fromIn.addEventListener('input', applyRangeInputs);
+toIn.addEventListener('input', applyRangeInputs);
+for (const el of [fromIn, toIn]) {
+  // бичиж дуусаад гарахад утгыг цэгцэлж харуулна (жишээ нь 1:05 → 65)
+  el.addEventListener('blur', () => setTimeout(() => {
+    if (document.activeElement !== fromIn && document.activeElement !== toIn && !rangeError) updateAudioUI();
+  }, 0));
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (el === fromIn) toIn.focus();
+      else el.blur();
+    }
+  });
 }
 
 async function loadAudioBlob(blob, name) {

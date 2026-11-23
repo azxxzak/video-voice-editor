@@ -208,10 +208,24 @@
 
         <div class="card">
           <h2><span class="step">1</span> Хэсэг таслах</h2>
-          <p class="hint" id="aSelHint">Эхлээд долгион дээр хэсэг сонгоно уу.</p>
+          <p class="hint">Долгион дээр чирж сонгоно, эсвэл <b>хэдэн секундээс хэдэн секунд хүртэл</b> гэдгээ бичнэ.</p>
+          <div class="rangeinputs">
+            <label class="rangein">
+              <span class="lbl">Эхлэх</span>
+              <input id="aFrom" type="text" inputmode="decimal" autocomplete="off" placeholder="жишээ 10" />
+              <span class="unit">секундээс</span>
+            </label>
+            <label class="rangein">
+              <span class="lbl">Дуусах</span>
+              <input id="aTo" type="text" inputmode="decimal" autocomplete="off" placeholder="жишээ 25" />
+              <span class="unit">секунд хүртэл</span>
+            </label>
+          </div>
+          <p class="hint small-note">1 минутаас дээш бол <b>1:05</b> гэж бичиж болно (= 65 секунд).</p>
+          <p class="hint selhint" id="aSelHint">Эхлээд хэсэг сонгоно уу.</p>
           <div class="toolgrid">
             <button class="tool" id="aTrim"><b>Үлдээх</b><span>Сонгосноос бусдыг хасна</span></button>
-            <button class="tool" id="aCut"><b>Устгах</b><span>Сонгосон хэсгийг хасаад залгана</span></button>
+            <button class="tool" id="aCut"><b>Устгах (голоос нь)</b><span>Сонгосон хэсгийг хасаад үлдсэнийг залгана</span></button>
             <button class="tool" id="aSilence"><b>Дуугүй болгох</b><span>Сонгосон хэсгийг чимээгүй болгоно</span></button>
             <button class="tool" id="aAutoTrim"><b>Эхлэл, төгсгөлийн чимээгүйг хасах</b><span>Автоматаар</span></button>
           </div>
