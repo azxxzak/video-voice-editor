@@ -1,0 +1,17 @@
+{
+  "name": "video-voice-editor",
+  "version": "1.0.0",
+  "description": "Browser-based video trimmer, audio extractor and voice editor (ffmpeg.wasm + Web Audio). Everything runs client-side.",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/copy-vendor.js",
+    "dev": "npm run build && node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@ffmpeg/core": "0.12.6",
+    "@ffmpeg/ffmpeg": "0.12.10",
+    "@ffmpeg/util": "0.12.1"
+  },
+  "engines": { "node": ">=18" }
+}

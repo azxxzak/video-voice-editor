@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video &amp; Voice Editor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">Video &amp; Voice Editor</div>
+    <nav class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="video" role="tab">Video</button>
+      <button class="tab-btn" data-tab="audio" role="tab">Voice / Audio</button>
+    </nav>
+    <div class="privacy">Files never leave your browser</div>
+  </header>
+
+  <main>
+    <!-- ============================ VIDEO ============================ -->
+    <section id="tab-video" class="tab">
+      <div class="card" id="vPick">
+        <label class="filebtn primary">
+          Choose a video
+          <input type="file" id="vFile" accept="video/*,.mkv,.mov,.mp4,.webm,.avi" hidden />
+        </label>
+        <span class="muted">MP4, MOV, WebM, MKV… Best under a few hundred MB (it is processed in memory).</span>
+      </div>
+
+      <div id="vEditor" hidden>
+        <div class="card">
+          <div class="filename" id="vName"></div>
+          <video id="vPlayer" controls playsinline></video>
+
+          <div class="timeline mode-keep" id="vTimeline" title="Click to seek, drag the handles to set start / end">
+            <div class="tl-range" id="vRange"></div>
+            <div class="tl-handle" id="vHS"><span>start</span></div>
+            <div class="tl-handle" id="vHE"><span>end</span></div>
+            <div class="tl-play" id="vPlayhead"></div>
+          </div>
+
+          <div class="row times">
+            <div class="timebox">
+              <span class="muted">Start</span> <b id="vStartT">0:00.00</b>
+              <button class="small" id="vSetStart">Set to playhead</button>
+            </div>
+            <div class="timebox">
+              <span class="muted">End</span> <b id="vEndT">0:00.00</b>
+              <button class="small" id="vSetEnd">Set to playhead</button>
+            </div>
+            <div class="timebox"><span class="muted">Playhead</span> <b id="vNowT">0:00.00</b></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Cut</h3>
+          <div class="modes">
+            <label class="mode">
+              <input type="radio" name="vmode" value="keep" checked />
+              <div><b>Crop both sides</b><br /><span class="muted">Keep only the part between start and end. Everything before start and after end is removed.</span></div>
+            </label>
+            <label class="mode">
+              <input type="radio" name="vmode" value="cut" />
+              <div><b>Cut the middle</b><br /><span class="muted">Remove the part between start and end. The beginning and the ending are joined together.</span></div>
+            </label>
+          </div>
+          <p class="summary" id="vSummary"></p>
+          <div class="row">
+            <button id="vPreview">Preview</button>
+            <label class="check" id="vFastWrap"><input type="checkbox" id="vFast" /> Fast export (no re-encode, snaps to keyframes)</label>
+            <span class="grow"></span>
+            <button class="primary" id="vExport">Export video</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Audio of this video</h3>
+          <div class="row">
+            <label>Extract audio as
+              <select id="vAudFmt">
+                <option value="mp3">MP3</option>
+                <option value="wav">WAV</option>
+                <option value="m4a">M4A (AAC)</option>
+              </select>
+            </label>
+            <button id="vExtract">Extract audio only</button>
+            <span class="grow"></span>
+            <button id="vMute">Remove audio (mute video)</button>
+          </div>
+        </div>
+
+        <div id="vResults"></div>
+      </div>
+    </section>
+
+    <!-- ============================ AUDIO ============================ -->
+    <section id="tab-audio" class="tab" hidden>
+      <div class="card">
+        <div class="row">
+          <label class="filebtn">
+            Open audio / video file
+            <input type="file" id="aFile" accept="audio/*,video/*" hidden />
+          </label>
+          <span class="muted">or</span>
+          <button id="recBtn" class="rec">● Record voice</button>
+          <div class="meter" id="recMeter" hidden><div id="recLevel"></div></div>
+          <b id="recTime" hidden>0:00</b>
+        </div>
+        <div class="row small-row" id="recOpts">
+          <label class="check"><input type="checkbox" id="recNS" checked /> Noise suppression</label>
+          <label class="check"><input type="checkbox" id="recEC" checked /> Echo cancellation</label>
+        </div>
+      </div>
+
+      <div id="aEditor" hidden>
+        <div class="card">
+          <div class="filename" id="aName"></div>
+          <canvas id="wave" height="180"></canvas>
+          <div class="row times">
+            <div class="timebox"><span class="muted">Selection</span> <b id="aSelT">none (drag on the waveform)</b></div>
+            <div class="timebox"><span class="muted">Cursor</span> <b id="aCurT">0:00.00</b></div>
+            <div class="timebox"><span class="muted">Length</span> <b id="aLenT">0:00.00</b></div>
+          </div>
+          <div class="row">
+            <button class="primary" id="aPlay">▶ Play</button>
+            <button id="aSelAll">Select all</button>
+            <button id="aClearSel">Clear selection</button>
+            <span class="grow"></span>
+            <button id="aUndo">↶ Undo</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Edit</h3>
+          <div class="row">
+            <button id="aTrim" title="Keep only the selection">Trim to selection</button>
+            <button id="aCut" title="Delete the selection and join the rest">Delete selection</button>
+            <button id="aSilence" title="Replace the selection with silence">Silence selection</button>
+            <button id="aAutoTrim" title="Remove quiet parts at the start and end">Auto-trim silence at ends</button>
+          </div>
+          <hr />
+          <div class="row">
+            <label>Volume <input type="number" id="aGain" value="6" step="1" style="width:5em" /> dB</label>
+            <button id="aVolume">Apply volume</button>
+            <button id="aNormalize">Normalize</button>
+          </div>
+          <div class="row">
+            <label>Fade length <input type="number" id="aFadeLen" value="1" min="0.05" step="0.1" style="width:5em" /> s</label>
+            <button id="aFadeIn">Fade in</button>
+            <button id="aFadeOut">Fade out</button>
+          </div>
+          <p class="muted tip">Volume, normalize and fades apply to the selection, or to the whole recording when nothing is selected.</p>
+        </div>
+
+        <div class="card">
+          <h3>Export</h3>
+          <div class="row">
+            <label>Format
+              <select id="aFmt">
+                <option value="wav">WAV (lossless)</option>
+                <option value="mp3">MP3 (192 kbps)</option>
+              </select>
+            </label>
+            <button class="primary" id="aExport">Download</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="busy" class="overlay" hidden>
+    <div class="dialog">
+      <div id="busyLabel">Working…</div>
+      <div class="bar"><div id="busyBar"></div></div>
+      <button id="busyCancel" class="small">Cancel</button>
+    </div>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="vendor/ffmpeg.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
