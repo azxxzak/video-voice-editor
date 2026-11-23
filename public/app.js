@@ -1,11 +1,12 @@
-/* Video & Voice Editor — everything runs in the browser.
- *  - ffmpeg.wasm : video cutting, audio extraction, MP3 export
- *  - Web Audio   : waveform, recording, voice editing
+/* Видео ба дуу засагч — бүх зүйл хөтөч дотор ажиллана.
+ *  - ffmpeg.wasm : видео тайрах, дуу салгах, MP3 болгох
+ *  - Web Audio   : дууны долгион, хураалт, дуу засвар
  */
 'use strict';
 
 const $ = (s) => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const ICON = (id, cls = '') => `<svg class="ic ${cls}"><use href="#i-${id}"/></svg>`;
 
 function fmt(t) {
   if (!isFinite(t)) t = 0;
@@ -17,7 +18,7 @@ function fmtSize(bytes) {
   return bytes > 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
 }
 function baseName(name) {
-  return (name || 'file').replace(/\.[^.]+$/, '');
+  return (name || 'файл').replace(/\.[^.]+$/, '');
 }
 function safeExt(name, fallback) {
   const m = /\.([a-z0-9]{1,5})$/i.exec(name || '');
@@ -31,7 +32,7 @@ function toast(msg, isErr) {
   el.className = 'toast' + (isErr ? ' err' : '');
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.hidden = true), isErr ? 7000 : 2500);
+  toastTimer = setTimeout(() => (el.hidden = true), isErr ? 7000 : 2800);
 }
 
 function download(blob, filename) {
@@ -46,18 +47,19 @@ function download(blob, filename) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Tabs                                                                */
+/* Цэс (Видео / Дуу)                                                   */
 /* ------------------------------------------------------------------ */
 function showTab(name) {
-  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   $('#tab-video').hidden = name !== 'video';
   $('#tab-audio').hidden = name !== 'audio';
+  window.scrollTo({ top: 0 });
   if (name === 'audio') requestAnimationFrame(drawWave);
 }
-document.querySelectorAll('.tab-btn').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+document.querySelectorAll('.nav-btn').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
 /* ------------------------------------------------------------------ */
-/* ffmpeg.wasm helpers                                                 */
+/* ffmpeg.wasm                                                         */
 /* ------------------------------------------------------------------ */
 let ffmpeg = null;
 let ffmpegLoading = null;
@@ -87,7 +89,6 @@ async function getFFmpeg() {
   }
   return ffmpegLoading;
 }
-
 function resetFFmpeg() {
   if (ffmpeg) {
     try { ffmpeg.terminate(); } catch {}
@@ -96,8 +97,8 @@ function resetFFmpeg() {
   ffmpegLoading = null;
 }
 
-// Stream-copy keeps the codecs, so the output must use a container that can hold them
-// (e.g. VP8/VP9 cannot go into .mp4). Keep the source container when it is a common one.
+// Stream-copy нь кодекийг хэвээр хадгалдаг тул гаралтын формат тохирох ёстой
+// (жишээ нь VP8/VP9 нь .mp4 дотор багтдаггүй).
 function copyExt(file) {
   const e = safeExt(file.name, 'mp4');
   return ['mp4', 'mov', 'm4v', 'webm', 'mkv'].includes(e) ? e : 'mp4';
@@ -117,6 +118,8 @@ function setBar(p) {
     $('#busyBar').style.width = Math.round(p * 100) + '%';
   }
 }
+const LOADING_ENGINE = 'Боловсруулагчийг ачаалж байна… (анх удаа ~30MB, түр хүлээнэ үү)';
+
 async function withBusy(label, fn) {
   cancelled = false;
   $('#busyLabel').textContent = label;
@@ -127,9 +130,12 @@ async function withBusy(label, fn) {
   } catch (err) {
     if (!cancelled) {
       console.error(err);
-      // a failed ffmpeg run leaves the wasm instance aborted: start fresh next time
-      if (/ffmpeg failed/.test(String(err && err.message))) resetFFmpeg();
-      toast(String(err && err.message ? err.message : err), true);
+      if (/ffmpeg failed/.test(String(err && err.message))) {
+        resetFFmpeg();
+        toast('Боловсруулалт амжилтгүй боллоо. Өөр файл эсвэл MP4 хэлбэртэй видеогоор оролдоно уу.', true);
+      } else {
+        toast('Алдаа гарлаа: ' + String(err && err.message ? err.message : err), true);
+      }
     }
     return null;
   } finally {
@@ -139,20 +145,12 @@ async function withBusy(label, fn) {
 }
 $('#busyCancel').addEventListener('click', () => {
   cancelled = true;
-  if (ffmpeg) {
-    try { ffmpeg.terminate(); } catch {}
-  }
-  ffmpeg = null;
-  ffmpegLoading = null;
+  resetFFmpeg();
   $('#busy').hidden = true;
-  toast('Cancelled');
+  toast('Цуцаллаа');
 });
 
-/**
- * Run a sequence of ffmpeg steps on one input file.
- * steps: [{ args:[...], output:'name.ext' }]; the last step's output is returned.
- * Use the literal placeholder 'IN' inside args for the input file name.
- */
+/** Нэг оролтын файл дээр ffmpeg-ийн алхмуудыг дараалан ажиллуулна. 'IN' нь оролтын файл. */
 async function runSteps(file, steps, label) {
   const ff = await getFFmpeg();
   const inName = 'input.' + safeExt(file.name, 'mp4');
@@ -165,14 +163,12 @@ async function runSteps(file, steps, label) {
       setBar(0);
       progressCb = (p) => setBar((i + p) / steps.length);
       ffLog.length = 0;
-      const args = st.args.map((a) => (a === 'IN' ? inName : a));
-      const code = await ff.exec(args);
+      if (st.list) await ff.writeFile('list.txt', new TextEncoder().encode(st.list));
+      const code = await ff.exec(st.args.map((a) => (a === 'IN' ? inName : a)));
       if (code !== 0) throw new Error('ffmpeg failed.\n' + ffLog.slice(-4).join('\n'));
       if (st.output) made.push(st.output);
     }
-    const out = made[made.length - 1];
-    const data = await ff.readFile(out);
-    return data;
+    return await ff.readFile(made[made.length - 1]);
   } finally {
     for (const n of [inName, ...made, 'list.txt']) {
       try { await ff.deleteFile(n); } catch {}
@@ -181,51 +177,60 @@ async function runSteps(file, steps, label) {
 }
 
 /* ------------------------------------------------------------------ */
-/* VIDEO TAB                                                           */
+/* ВИДЕО                                                               */
 /* ------------------------------------------------------------------ */
 const vid = { file: null, url: null, duration: 0, start: 0, end: 0, previewing: false };
 const player = $('#vPlayer');
 const tl = $('#vTimeline');
 
-function vMode() {
-  return document.querySelector('input[name=vmode]:checked').value;
-}
+const vMode = () => document.querySelector('input[name=vmode]:checked').value;
 
-$('#vFile').addEventListener('change', (e) => {
-  const f = e.target.files[0];
-  e.target.value = '';
-  if (f) loadVideo(f);
-});
+for (const id of ['#vFile', '#vFile2']) {
+  $(id).addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (f) loadVideo(f);
+  });
+}
 
 function loadVideo(file) {
   if (vid.url) URL.revokeObjectURL(vid.url);
   vid.file = file;
   vid.url = URL.createObjectURL(file);
   vid.duration = 0;
-  $('#vName').textContent = file.name + '  ·  ' + fmtSize(file.size);
+  $('#vName').textContent = file.name + ' · ' + fmtSize(file.size);
   $('#vResults').innerHTML = '';
   player.src = vid.url;
   player.load();
 }
 player.addEventListener('loadedmetadata', () => {
-  if (!isFinite(player.duration)) {
-    toast('Could not read the length of this video.', true);
+  if (!isFinite(player.duration) || !player.duration) {
+    toast('Видеоны уртыг уншиж чадсангүй.', true);
     return;
   }
   vid.duration = player.duration;
   vid.start = 0;
   vid.end = vid.duration;
+  $('#vEmpty').hidden = true;
   $('#vEditor').hidden = false;
+  $('#vTotalT').textContent = fmt(vid.duration);
   updateVideoUI();
 });
 player.addEventListener('error', () => {
-  if (vid.file) toast('This browser cannot play that video file. Try an MP4 (H.264) or WebM.', true);
+  if (vid.file) toast('Энэ видеог хөтөч тоглуулж чадсангүй. MP4 (H.264) эсвэл WebM хэлбэртэй файл ашиглана уу.', true);
 });
 player.addEventListener('pause', () => (vid.previewing = false));
 
-function tlPct(t) {
-  return (vid.duration ? (t / vid.duration) * 100 : 0) + '%';
-}
+// Таслах / Дуу салгах / Дуугүй болгох
+document.querySelectorAll('.seg-btn').forEach((b) =>
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('active', x === b));
+    for (const t of ['cut', 'audio', 'mute']) $('#task-' + t).hidden = t !== b.dataset.task;
+  })
+);
+
+const tlPct = (t) => (vid.duration ? (t / vid.duration) * 100 : 0) + '%';
+
 function updateVideoUI() {
   if (!vid.duration) return;
   const { start, end, duration } = vid;
@@ -238,17 +243,17 @@ function updateVideoUI() {
   $('#vHE').style.left = tlPct(end);
   $('#vStartT').textContent = fmt(start);
   $('#vEndT').textContent = fmt(end);
-  const keepLen = mode === 'keep' ? end - start : duration - (end - start);
+  const resultLen = mode === 'keep' ? end - start : duration - (end - start);
   $('#vSummary').textContent =
     mode === 'keep'
-      ? `Result: ${fmt(start)} → ${fmt(end)}  (${fmt(keepLen)} long)`
-      : `Remove ${fmt(start)} → ${fmt(end)}  ·  result is ${fmt(keepLen)} long`;
+      ? `Үлдэх хэсэг: ${fmt(start)} → ${fmt(end)} · үр дүн ${fmt(resultLen)}`
+      : `Хасагдах хэсэг: ${fmt(start)} → ${fmt(end)} · үр дүн ${fmt(resultLen)}`;
   $('#vFast').disabled = mode === 'cut';
   $('#vFastWrap').classList.toggle('disabled', mode === 'cut');
 }
 document.querySelectorAll('input[name=vmode]').forEach((r) => r.addEventListener('change', updateVideoUI));
 
-// timeline interaction
+// цагийн шугам (хулгана ба хуруу)
 let tlDrag = null;
 function tlTime(ev) {
   const r = tl.getBoundingClientRect();
@@ -269,8 +274,15 @@ function tlApply(ev) {
 }
 tl.addEventListener('pointerdown', (ev) => {
   if (!vid.duration) return;
+  ev.preventDefault();
   const h = ev.target.closest('.tl-handle');
-  tlDrag = h ? (h.id === 'vHS' ? 's' : 'e') : 'seek';
+  if (h) tlDrag = h.id === 'vHS' ? 's' : 'e';
+  else {
+    // хамгийн ойр бариулыг сонгох (хуруугаар барихад хялбар)
+    const t = tlTime(ev);
+    const px = (x) => Math.abs(x - t) / vid.duration * tl.getBoundingClientRect().width;
+    tlDrag = Math.min(px(vid.start), px(vid.end)) < 14 ? (px(vid.start) < px(vid.end) ? 's' : 'e') : 'seek';
+  }
   tl.setPointerCapture(ev.pointerId);
   tlApply(ev);
 });
@@ -296,12 +308,10 @@ $('#vPreview').addEventListener('click', () => {
   vid.previewing = true;
 });
 
-// playhead + preview logic (rAF so it is smooth)
 function tick() {
-  if (vid.duration) {
+  if (vid.duration && !$('#tab-video').hidden) {
     const t = player.currentTime;
     $('#vPlayhead').style.left = tlPct(t);
-    $('#vNowT').textContent = fmt(t);
     if (vid.previewing && !player.paused) {
       if (vMode() === 'keep') {
         if (t >= vid.end) player.pause();
@@ -314,7 +324,7 @@ function tick() {
 }
 requestAnimationFrame(tick);
 
-function addResult(blob, name, kind, extra) {
+function addResult(blob, name, kind, extraBtn) {
   const url = URL.createObjectURL(blob);
   const card = document.createElement('div');
   card.className = 'card result';
@@ -324,24 +334,23 @@ function addResult(blob, name, kind, extra) {
   if (kind === 'video') media.playsInline = true;
   const meta = document.createElement('div');
   meta.className = 'meta';
-  const label = document.createElement('div');
-  label.innerHTML = '<b></b> <span class="muted"></span>';
-  label.querySelector('b').textContent = name;
-  label.querySelector('span').textContent = fmtSize(blob.size);
+  const info = document.createElement('div');
+  info.innerHTML = '<div class="ok">✓ Бэлэн боллоо</div><div><b></b> <span class="muted"></span></div>';
+  info.querySelector('b').textContent = name;
+  info.querySelector('.muted').textContent = fmtSize(blob.size);
   const actions = document.createElement('div');
-  actions.className = 'row';
-  actions.style.margin = '0';
-  if (extra) actions.appendChild(extra);
+  actions.className = 'actions';
+  if (extraBtn) actions.appendChild(extraBtn);
   const dl = document.createElement('a');
-  dl.className = 'dl';
+  dl.className = 'btn dl';
   dl.href = url;
   dl.download = name;
-  dl.textContent = 'Download';
+  dl.innerHTML = ICON('download') + ' Татаж авах';
   actions.appendChild(dl);
-  meta.append(label, actions);
+  meta.append(info, actions);
   card.append(media, meta);
   $('#vResults').prepend(card);
-  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 const X264 = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart'];
@@ -355,7 +364,7 @@ $('#vExport').addEventListener('click', async () => {
   let steps;
 
   if (mode === 'keep') {
-    if (end - start < 0.1) return toast('The selected range is too short.', true);
+    if (end - start < 0.1) return toast('Сонгосон хэсэг хэт богино байна.', true);
     if ($('#vFast').checked) {
       outExt = copyExt(vid.file);
       const o = 'out.' + outExt;
@@ -366,48 +375,44 @@ $('#vExport').addEventListener('click', async () => {
   } else {
     const hasA = start > 0.05;
     const hasB = end < duration - 0.05;
-    if (!hasA && !hasB) return toast('Nothing would be left — move start or end.', true);
+    if (!hasA && !hasB) return toast('Юу ч үлдэхгүй байна. Эхлэл эсвэл төгсгөлөө зөөнө үү.', true);
     steps = [];
     if (hasA) steps.push({ args: ['-i', 'IN', '-t', T(start), ...X264, 'a.mp4'], output: 'a.mp4' });
     if (hasB) steps.push({ args: ['-ss', T(end), '-i', 'IN', ...X264, 'b.mp4'], output: 'b.mp4' });
     if (hasA && hasB) {
-      steps.push({ args: ['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', 'out.mp4'], output: 'out.mp4', list: true });
+      steps.push({ args: ['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', 'out.mp4'], output: 'out.mp4', list: "file 'a.mp4'\nfile 'b.mp4'\n" });
     } else {
-      // a single piece is already the result
       steps[0].args[steps[0].args.length - 1] = 'out.mp4';
       steps[0].output = 'out.mp4';
     }
   }
 
-  const data = await withBusy('Loading video engine…', async () => {
+  const data = await withBusy(LOADING_ENGINE, async () => {
     const ff = await getFFmpeg();
-    const cutFiles = [];
-    // custom runner (needs list.txt + several temp files for "cut middle")
     const inName = 'input.' + safeExt(vid.file.name, 'mp4');
     await ff.writeFile(inName, new Uint8Array(await vid.file.arrayBuffer()));
+    const made = [];
     try {
       for (let i = 0; i < steps.length; i++) {
         const st = steps[i];
-        $('#busyLabel').textContent = steps.length > 1 ? `Exporting video (${i + 1}/${steps.length})…` : 'Exporting video…';
+        $('#busyLabel').textContent = steps.length > 1 ? `Видео үүсгэж байна… (${i + 1}/${steps.length})` : 'Видео үүсгэж байна…';
         setBar(0);
         progressCb = (p) => setBar((i + p) / steps.length);
-        if (st.list) {
-          await ff.writeFile('list.txt', new TextEncoder().encode("file 'a.mp4'\nfile 'b.mp4'\n"));
-        }
+        if (st.list) await ff.writeFile('list.txt', new TextEncoder().encode(st.list));
         ffLog.length = 0;
         const code = await ff.exec(st.args.map((a) => (a === 'IN' ? inName : a)));
         if (code !== 0) throw new Error('ffmpeg failed.\n' + ffLog.slice(-4).join('\n'));
-        cutFiles.push(st.output);
+        made.push(st.output);
       }
       return await ff.readFile(steps[steps.length - 1].output);
     } finally {
-      for (const n of [inName, 'a.mp4', 'b.mp4', ...cutFiles, 'list.txt']) {
+      for (const n of [inName, 'a.mp4', 'b.mp4', ...made, 'list.txt']) {
         try { await ff.deleteFile(n); } catch {}
       }
     }
   });
-  const outName = baseName(vid.file.name) + (mode === 'keep' ? '_cropped' : '_cut') + '.' + outExt;
-  if (data) addResult(new Blob([data.buffer], { type: videoMime(outExt) }), outName, 'video');
+  const suffix = mode === 'keep' ? '_тайрсан' : '_таслсан';
+  if (data) addResult(new Blob([data.buffer], { type: videoMime(outExt) }), baseName(vid.file.name) + suffix + '.' + outExt, 'video');
 });
 
 const AUD = {
@@ -420,14 +425,15 @@ $('#vExtract').addEventListener('click', async () => {
   if (!vid.file) return;
   const f = $('#vAudFmt').value;
   const out = 'out.' + f;
-  const data = await withBusy('Loading video engine…', () =>
-    runSteps(vid.file, [{ args: ['-i', 'IN', '-vn', ...AUD[f].args, out], output: out }], 'Extracting audio…')
+  const data = await withBusy(LOADING_ENGINE, () =>
+    runSteps(vid.file, [{ args: ['-i', 'IN', '-vn', ...AUD[f].args, out], output: out }], 'Дууг салгаж байна…')
   );
   if (!data) return;
   const blob = new Blob([data.buffer], { type: AUD[f].mime });
-  const name = baseName(vid.file.name) + '_audio.' + f;
+  const name = baseName(vid.file.name) + '_дуу.' + f;
   const edit = document.createElement('button');
-  edit.textContent = 'Edit in Voice editor';
+  edit.className = 'btn';
+  edit.textContent = 'Дуу засагчид нээх';
   edit.addEventListener('click', async () => {
     showTab('audio');
     await loadAudioBlob(blob, name);
@@ -439,30 +445,37 @@ $('#vMute').addEventListener('click', async () => {
   if (!vid.file) return;
   const ext = copyExt(vid.file);
   const out = 'out.' + ext;
-  const data = await withBusy('Loading video engine…', () =>
-    runSteps(vid.file, [{ args: ['-i', 'IN', '-c:v', 'copy', '-an', out], output: out }], 'Removing audio…')
+  const data = await withBusy(LOADING_ENGINE, () =>
+    runSteps(vid.file, [{ args: ['-i', 'IN', '-c:v', 'copy', '-an', out], output: out }], 'Дууг хасаж байна…')
   );
-  if (data) addResult(new Blob([data.buffer], { type: videoMime(ext) }), baseName(vid.file.name) + '_muted.' + ext, 'video');
+  if (data) addResult(new Blob([data.buffer], { type: videoMime(ext) }), baseName(vid.file.name) + '_дуугүй.' + ext, 'video');
 });
 
 /* ------------------------------------------------------------------ */
-/* AUDIO TAB                                                           */
+/* ДУУ                                                                 */
 /* ------------------------------------------------------------------ */
 const actx = new (window.AudioContext || window.webkitAudioContext)();
 let abuf = null;
-let aname = 'recording';
+let aname = 'бичлэг';
 const undoStack = [];
-let sel = null; // {a,b} seconds
-let cursor = 0; // seconds
+let sel = null; // {a,b} секундээр
+let cursor = 0;
 let peaks = null;
+let rec = null;
 
 function cloneBuffer(buf) {
   const nb = actx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
   for (let c = 0; c < buf.numberOfChannels; c++) nb.copyToChannel(buf.getChannelData(c), c);
   return nb;
 }
-function setBuffer(nb, { keepUndo = true } = {}) {
-  if (abuf && keepUndo) {
+function updateAudioView() {
+  const recording = !!rec;
+  $('#recPanel').hidden = !recording;
+  $('#aEmpty').hidden = recording || !!abuf;
+  $('#aEditor').hidden = recording || !abuf;
+}
+function setBuffer(nb) {
+  if (abuf) {
     undoStack.push(abuf);
     if (undoStack.length > 20) undoStack.shift();
   }
@@ -471,45 +484,51 @@ function setBuffer(nb, { keepUndo = true } = {}) {
   peaks = null;
   sel = null;
   cursor = 0;
-  $('#aEditor').hidden = false;
+  updateAudioView();
   updateAudioUI();
 }
 function updateAudioUI() {
-  $('#aName').textContent = aname + (abuf ? `  ·  ${abuf.numberOfChannels === 1 ? 'mono' : 'stereo'}, ${abuf.sampleRate} Hz` : '');
+  $('#aName').textContent = aname + (abuf ? ` · ${abuf.numberOfChannels === 1 ? 'моно' : 'стерео'}` : '');
   $('#aLenT').textContent = abuf ? fmt(abuf.duration) : '0:00.00';
-  $('#aSelT').textContent = sel ? `${fmt(sel.a)} → ${fmt(sel.b)}  (${fmt(sel.b - sel.a)})` : 'none (drag on the waveform)';
+  $('#aSelT').textContent = sel ? fmt(sel.b - sel.a) : '—';
   $('#aCurT').textContent = fmt(cursor);
   $('#aUndo').disabled = undoStack.length === 0;
   for (const id of ['aTrim', 'aCut', 'aSilence']) $('#' + id).disabled = !sel;
+  $('#aSelHint').textContent = sel
+    ? `Сонгосон хэсэг: ${fmt(sel.a)} → ${fmt(sel.b)}`
+    : 'Эхлээд долгион дээр чирж хэсэг сонгоно уу.';
+  if (!curSrc) setPlayUI(false); // «Тоглуулах» / «Сонгосныг тоглуулах» бичвэр
   drawWave();
 }
 
 async function loadAudioBlob(blob, name) {
-  const ok = await withBusy('Reading audio…', async () => {
+  return withBusy('Дууг уншиж байна…', async () => {
     let buf;
     try {
       buf = await actx.decodeAudioData(await blob.arrayBuffer());
     } catch {
-      // fall back to ffmpeg (handles video containers & odd codecs)
+      // ffmpeg-ээр хөрвүүлж үзнэ (видео файл, ер бусын кодек)
+      $('#busyLabel').textContent = LOADING_ENGINE;
       const file = new File([blob], name || 'input.bin', { type: blob.type });
-      $('#busyLabel').textContent = 'Loading audio engine…';
-      const data = await runSteps(file, [{ args: ['-i', 'IN', '-vn', '-ac', '2', '-c:a', 'pcm_s16le', 'out.wav'], output: 'out.wav' }], 'Converting audio…');
+      const data = await runSteps(file, [{ args: ['-i', 'IN', '-vn', '-ac', '2', '-c:a', 'pcm_s16le', 'out.wav'], output: 'out.wav' }], 'Дууг хөрвүүлж байна…');
       buf = await actx.decodeAudioData(data.buffer.slice(0));
     }
-    aname = name || 'recording';
+    aname = name || 'бичлэг';
     setBuffer(buf);
+    showTab('audio');
     return true;
   });
-  return ok;
 }
 
-$('#aFile').addEventListener('change', async (e) => {
-  const f = e.target.files[0];
-  e.target.value = '';
-  if (f) await loadAudioBlob(f, f.name);
-});
+for (const id of ['#aFile', '#aFile2']) {
+  $(id).addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (f) await loadAudioBlob(f, f.name);
+  });
+}
 
-/* ---- waveform ---- */
+/* ---- долгион ---- */
 const wave = $('#wave');
 function computePeaks(w) {
   const n = abuf.length;
@@ -535,12 +554,11 @@ function computePeaks(w) {
   }
   return { w, buf: abuf, mins, maxs };
 }
-function cssVar(n) {
-  return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-}
-let playPos = null; // seconds while playing
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let playPos = null;
+
 function drawWave() {
-  if ($('#tab-audio').hidden) return;
+  if ($('#tab-audio').hidden || $('#aEditor').hidden) return;
   const dpr = window.devicePixelRatio || 1;
   const w = Math.max(1, wave.clientWidth);
   const h = wave.clientHeight;
@@ -558,20 +576,26 @@ function drawWave() {
   for (let x = 0; x < w; x++) {
     const y1 = mid - peaks.maxs[x] * mid * 0.95;
     const y2 = mid - peaks.mins[x] * mid * 0.95;
-    g.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+    g.fillRect(x, y1, 1, Math.max(1.5, y2 - y1));
   }
-  g.fillStyle = cssVar('--line');
-  g.fillRect(0, mid, w, 1);
   const px = (t) => (t / abuf.duration) * w;
   if (sel) {
     g.fillStyle = cssVar('--sel');
     g.fillRect(px(sel.a), 0, px(sel.b) - px(sel.a), h);
+    g.fillStyle = cssVar('--accent');
+    for (const t of [sel.a, sel.b]) {
+      g.fillRect(px(t) - 1.5, 0, 3, h);
+      g.beginPath();
+      g.arc(px(t), h / 2, 9, 0, Math.PI * 2);
+      g.fill();
+    }
   }
   g.fillStyle = cssVar('--text');
-  g.fillRect(px(playPos != null ? playPos : cursor), 0, 2, h);
+  g.fillRect(px(playPos != null ? playPos : cursor) - 1, 0, 2, h);
 }
 window.addEventListener('resize', drawWave);
 
+// сонголт: шинээр чирэх эсвэл хоёр захыг нь чирж өөрчлөх
 let wDrag = null;
 function waveTime(ev) {
   const r = wave.getBoundingClientRect();
@@ -579,32 +603,47 @@ function waveTime(ev) {
 }
 wave.addEventListener('pointerdown', (ev) => {
   if (!abuf) return;
+  ev.preventDefault();
   wave.setPointerCapture(ev.pointerId);
-  wDrag = { x0: ev.clientX, t0: waveTime(ev), moved: false };
+  const r = wave.getBoundingClientRect();
+  const t = waveTime(ev);
+  const near = (tt) => Math.abs(((tt - t) / abuf.duration) * r.width) < 20;
+  if (sel && near(sel.a) && (!near(sel.b) || Math.abs(sel.a - t) <= Math.abs(sel.b - t))) {
+    wDrag = { x0: ev.clientX, fixed: sel.b, edge: true, moved: false };
+  } else if (sel && near(sel.b)) {
+    wDrag = { x0: ev.clientX, fixed: sel.a, edge: true, moved: false };
+  } else {
+    wDrag = { x0: ev.clientX, fixed: t, edge: false, moved: false };
+  }
 });
 wave.addEventListener('pointermove', (ev) => {
   if (!wDrag) return;
-  if (!wDrag.moved && Math.abs(ev.clientX - wDrag.x0) < 4) return;
+  if (!wDrag.moved && !wDrag.edge && Math.abs(ev.clientX - wDrag.x0) < 5) return;
   wDrag.moved = true;
   const t = waveTime(ev);
-  sel = { a: Math.min(wDrag.t0, t), b: Math.max(wDrag.t0, t) };
+  sel = { a: Math.min(wDrag.fixed, t), b: Math.max(wDrag.fixed, t) };
   updateAudioUI();
 });
-wave.addEventListener('pointerup', () => {
-  if (wDrag && !wDrag.moved) {
-    cursor = wDrag.t0;
+function endWaveDrag(ev) {
+  if (!wDrag) return;
+  if (!wDrag.moved && !wDrag.edge) {
+    cursor = waveTime(ev);
     sel = null;
-    updateAudioUI();
   }
-  if (sel && sel.b - sel.a < 0.01) sel = null;
+  if (sel && sel.b - sel.a < 0.02) sel = null;
   wDrag = null;
   updateAudioUI();
-});
+}
+wave.addEventListener('pointerup', endWaveDrag);
+wave.addEventListener('pointercancel', () => { wDrag = null; });
 
-/* ---- playback ---- */
+/* ---- тоглуулах ---- */
 let curSrc = null;
 let playInfo = null;
 let raf = 0;
+function setPlayUI(playing) {
+  $('#aPlay').innerHTML = (playing ? ICON('stop') : ICON('play')) + `<span>${playing ? 'Зогсоох' : sel ? 'Сонгосныг тоглуулах' : 'Тоглуулах'}</span>`;
+}
 function stopPlayback() {
   if (curSrc) {
     const s = curSrc;
@@ -613,7 +652,7 @@ function stopPlayback() {
   }
   cancelAnimationFrame(raf);
   playPos = null;
-  $('#aPlay').textContent = '▶ Play';
+  setPlayUI(false);
   drawWave();
 }
 function startPlayback() {
@@ -636,7 +675,7 @@ function startPlayback() {
       stopPlayback();
     }
   };
-  $('#aPlay').textContent = '■ Stop';
+  setPlayUI(true);
   const loop = () => {
     if (!curSrc) return;
     playPos = Math.min(playInfo.to, playInfo.from + (actx.currentTime - playInfo.t0));
@@ -650,10 +689,12 @@ $('#aSelAll').addEventListener('click', () => {
   if (!abuf) return;
   sel = { a: 0, b: abuf.duration };
   updateAudioUI();
+  setPlayUI(!!curSrc);
 });
 $('#aClearSel').addEventListener('click', () => {
   sel = null;
   updateAudioUI();
+  setPlayUI(!!curSrc);
 });
 $('#aUndo').addEventListener('click', () => {
   if (!undoStack.length) return;
@@ -666,7 +707,7 @@ $('#aUndo').addEventListener('click', () => {
   updateAudioUI();
 });
 document.addEventListener('keydown', (e) => {
-  if ($('#tab-audio').hidden || !abuf) return;
+  if ($('#tab-audio').hidden || !abuf || $('#aEditor').hidden) return;
   if (e.target.matches('input, select, textarea')) return;
   if (e.code === 'Space') {
     e.preventDefault();
@@ -674,15 +715,13 @@ document.addEventListener('keydown', (e) => {
   } else if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
     e.preventDefault();
     $('#aUndo').click();
-  } else if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (sel) {
-      e.preventDefault();
-      $('#aCut').click();
-    }
+  } else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) {
+    e.preventDefault();
+    $('#aCut').click();
   }
 });
 
-/* ---- editing operations ---- */
+/* ---- засварууд ---- */
 function regionSamples(requireSel) {
   const sr = abuf.sampleRate;
   if (sel) {
@@ -692,11 +731,8 @@ function regionSamples(requireSel) {
   }
   return requireSel ? null : [0, abuf.length];
 }
-function needSel() {
-  toast('Drag on the waveform to select a part first.', true);
-}
+const needSel = () => toast('Эхлээд долгион дээр чирж хэсэг сонгоно уу.', true);
 function sliceBuffer(parts) {
-  // parts: array of [a,b] sample ranges concatenated in order
   const total = parts.reduce((n, [a, b]) => n + (b - a), 0);
   if (total < 1) return null;
   const nb = actx.createBuffer(abuf.numberOfChannels, total, abuf.sampleRate);
@@ -711,7 +747,7 @@ function sliceBuffer(parts) {
   }
   return nb;
 }
-function modify(requireSel, fn) {
+function modify(requireSel, fn, doneMsg) {
   if (!abuf) return;
   const r = regionSamples(requireSel);
   if (!r) return needSel();
@@ -723,33 +759,40 @@ function modify(requireSel, fn) {
   sel = keepSel;
   cursor = keepCursor;
   updateAudioUI();
+  if (doneMsg) toast(doneMsg);
 }
 
 $('#aTrim').addEventListener('click', () => {
   const r = abuf && regionSamples(true);
   if (!r) return needSel();
   const nb = sliceBuffer([r]);
-  if (nb) setBuffer(nb);
+  if (nb) { setBuffer(nb); toast('Сонгосон хэсгийг үлдээлээ'); }
 });
 $('#aCut').addEventListener('click', () => {
   const r = abuf && regionSamples(true);
   if (!r) return needSel();
   const nb = sliceBuffer([[0, r[0]], [r[1], abuf.length]]);
-  if (!nb) return toast('Nothing would be left.', true);
+  if (!nb) return toast('Юу ч үлдэхгүй байна.', true);
   const at = r[0] / abuf.sampleRate;
   setBuffer(nb);
   cursor = Math.min(at, nb.duration);
   updateAudioUI();
+  toast('Сонгосон хэсгийг устгалаа');
 });
-$('#aSilence').addEventListener('click', () => modify(true, (d, a, b) => d.fill(0, a, b)));
+$('#aSilence').addEventListener('click', () => modify(true, (d, a, b) => d.fill(0, a, b), 'Сонгосон хэсэг дуугүй боллоо'));
 
+const gainSlider = $('#aGain');
+function showGain() {
+  const v = +gainSlider.value;
+  $('#aGainV').textContent = (v > 0 ? '+' : '') + v + ' дБ';
+}
+gainSlider.addEventListener('input', showGain);
+showGain();
 $('#aVolume').addEventListener('click', () => {
-  const db = parseFloat($('#aGain').value);
-  if (!isFinite(db)) return toast('Enter a volume change in dB.', true);
-  const g = Math.pow(10, db / 20);
+  const g = Math.pow(10, +gainSlider.value / 20);
   modify(false, (d, a, b) => {
     for (let i = a; i < b; i++) d[i] = clamp(d[i] * g, -1, 1);
-  });
+  }, 'Дууны хэмжээг өөрчиллөө');
 });
 $('#aNormalize').addEventListener('click', () => {
   if (!abuf) return;
@@ -759,11 +802,11 @@ $('#aNormalize').addEventListener('click', () => {
     const d = abuf.getChannelData(c);
     for (let i = r[0]; i < r[1]; i++) peak = Math.max(peak, Math.abs(d[i]));
   }
-  if (peak < 1e-5) return toast('The selection is silent.', true);
-  const g = Math.pow(10, -1 / 20) / peak; // peak at -1 dBFS
+  if (peak < 1e-5) return toast('Энэ хэсэг чимээгүй байна.', true);
+  const g = Math.pow(10, -1 / 20) / peak;
   modify(false, (d, a, b) => {
     for (let i = a; i < b; i++) d[i] = clamp(d[i] * g, -1, 1);
-  });
+  }, 'Дууг тэгшлэлээ');
 });
 function fadeLenSamples(a, b) {
   const s = parseFloat($('#aFadeLen').value) || 1;
@@ -774,14 +817,14 @@ $('#aFadeIn').addEventListener('click', () => {
   modify(false, (d, a, b) => {
     const n = fadeLenSamples(a, b);
     for (let i = 0; i < n; i++) d[a + i] *= i / n;
-  });
+  }, 'Аажим эхлэх болголоо');
 });
 $('#aFadeOut').addEventListener('click', () => {
   if (!abuf) return;
   modify(false, (d, a, b) => {
     const n = fadeLenSamples(a, b);
     for (let i = 0; i < n; i++) d[b - 1 - i] *= i / n;
-  });
+  }, 'Аажим дуусах болголоо');
 });
 $('#aAutoTrim').addEventListener('click', () => {
   if (!abuf) return;
@@ -793,71 +836,86 @@ $('#aAutoTrim').addEventListener('click', () => {
     for (let i = 0; i < n; i++) if (Math.abs(d[i]) > thr) { first = Math.min(first, i); break; }
     for (let i = n - 1; i >= 0; i--) if (Math.abs(d[i]) > thr) { last = Math.max(last, i); break; }
   }
-  if (last < 0) return toast('The whole recording is silent.', true);
-  const pad = Math.round(0.1 * abuf.sampleRate); // keep 100 ms of air around the voice
+  if (last < 0) return toast('Бүх дуу чимээгүй байна.', true);
+  const pad = Math.round(0.1 * abuf.sampleRate);
   const a = Math.max(0, first - pad);
   const b = Math.min(n, last + pad);
-  if (a === 0 && b === n) return toast('No silence to trim at the ends.');
+  if (a === 0 && b === n) return toast('Эхлэл, төгсгөлд хасах чимээгүй хэсэг алга.');
   setBuffer(sliceBuffer([[a, b]]));
+  toast('Чимээгүй хэсгийг хаслаа');
 });
 
-/* ---- recording ---- */
-let rec = null;
-$('#recBtn').addEventListener('click', async () => {
-  if (rec) return stopRecording();
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    return toast('Recording needs a secure page (https or localhost) and a browser with microphone support.', true);
+/* ---- хураалт ---- */
+function micError(err) {
+  if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
+    return 'Микрофоны зөвшөөрөл өгөөгүй байна. Хөтчийн хаягийн мөрний тохиргооноос микрофоныг зөвшөөрөөд дахин оролдоно уу.';
   }
+  if (err && err.name === 'NotFoundError') return 'Микрофон олдсонгүй.';
+  return 'Микрофоныг ашиглаж чадсангүй: ' + ((err && err.message) || err);
+}
+async function startRecording() {
+  if (rec) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    return toast('Энэ хөтөч дээр хураах боломжгүй байна. Chrome, Safari эсвэл Firefox ашиглана уу.', true);
+  }
+  let stream;
   try {
     await actx.resume();
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: { noiseSuppression: $('#recNS').checked, echoCancellation: $('#recEC').checked, autoGainControl: false },
     });
-    const mr = new MediaRecorder(stream);
-    const chunks = [];
-    const src = actx.createMediaStreamSource(stream);
-    const an = actx.createAnalyser();
-    an.fftSize = 512;
-    src.connect(an);
-    const data = new Uint8Array(an.fftSize);
-    const t0 = performance.now();
-    let frame = 0;
-    const meter = () => {
-      an.getByteTimeDomainData(data);
-      let pk = 0;
-      for (const v of data) pk = Math.max(pk, Math.abs(v - 128));
-      $('#recLevel').style.width = Math.min(100, (pk / 128) * 140) + '%';
-      $('#recTime').textContent = fmt((performance.now() - t0) / 1000).replace(/\.\d+$/, '');
-      frame = requestAnimationFrame(meter);
-    };
-    mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-    mr.onstop = async () => {
-      cancelAnimationFrame(frame);
-      stream.getTracks().forEach((t) => t.stop());
-      src.disconnect();
-      rec = null;
-      $('#recBtn').textContent = '● Record voice';
-      $('#recBtn').classList.remove('on');
-      $('#recMeter').hidden = true;
-      $('#recTime').hidden = true;
-      if (chunks.length) await loadAudioBlob(new Blob(chunks, { type: mr.mimeType }), 'recording-' + new Date().toISOString().slice(11, 19).replace(/:/g, '') );
-    };
-    mr.start();
-    rec = { mr };
-    $('#recBtn').textContent = '■ Stop recording';
-    $('#recBtn').classList.add('on');
-    $('#recMeter').hidden = false;
-    $('#recTime').hidden = false;
-    meter();
   } catch (err) {
-    toast('Could not use the microphone: ' + (err.message || err), true);
+    return toast(micError(err), true);
   }
-});
-function stopRecording() {
-  if (rec && rec.mr.state !== 'inactive') rec.mr.stop();
+  stopPlayback();
+  const mr = new MediaRecorder(stream);
+  const chunks = [];
+  const src = actx.createMediaStreamSource(stream);
+  const an = actx.createAnalyser();
+  an.fftSize = 512;
+  src.connect(an);
+  const data = new Uint8Array(an.fftSize);
+  const t0 = performance.now();
+  let frame = 0;
+  const meter = () => {
+    an.getByteTimeDomainData(data);
+    let pk = 0;
+    for (const v of data) pk = Math.max(pk, Math.abs(v - 128));
+    $('#recLevel').style.width = Math.min(100, (pk / 128) * 140) + '%';
+    const s = Math.floor((performance.now() - t0) / 1000);
+    $('#recTime').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    frame = requestAnimationFrame(meter);
+  };
+  rec = { mr, cancelled: false };
+  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  mr.onstop = async () => {
+    cancelAnimationFrame(frame);
+    stream.getTracks().forEach((t) => t.stop());
+    src.disconnect();
+    const cancel = rec && rec.cancelled;
+    rec = null;
+    updateAudioView();
+    if (!cancel && chunks.length) {
+      const now = new Date();
+      const hhmm = String(now.getHours()).padStart(2, '0') + '-' + String(now.getMinutes()).padStart(2, '0');
+      await loadAudioBlob(new Blob(chunks, { type: mr.mimeType }), 'Бичлэг ' + hhmm);
+    }
+  };
+  mr.start();
+  showTab('audio');
+  updateAudioView();
+  meter();
 }
+$('#recBtn').addEventListener('click', startRecording);
+$('#recBtn2').addEventListener('click', startRecording);
+$('#recStop').addEventListener('click', () => rec && rec.mr.state !== 'inactive' && rec.mr.stop());
+$('#recCancel').addEventListener('click', () => {
+  if (!rec) return;
+  rec.cancelled = true;
+  if (rec.mr.state !== 'inactive') rec.mr.stop();
+});
 
-/* ---- export ---- */
+/* ---- хадгалах ---- */
 function encodeWav(buf) {
   const nch = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
   const bytes = 44 + len * nch * 2;
@@ -882,14 +940,48 @@ function encodeWav(buf) {
 }
 $('#aExport').addEventListener('click', async () => {
   if (!abuf) return;
-  const fmtSel = $('#aFmt').value;
-  const name = baseName(aname) + '_edited';
+  const f = document.querySelector('input[name=afmt]:checked').value;
+  const name = baseName(aname) + '_заслаа';
   const wav = encodeWav(abuf);
-  if (fmtSel === 'wav') return download(new Blob([wav], { type: 'audio/wav' }), name + '.wav');
-  const data = await withBusy('Loading audio engine…', () =>
-    runSteps(new File([wav], 'in.wav'), [{ args: ['-i', 'IN', '-c:a', 'libmp3lame', '-b:a', '192k', 'out.mp3'], output: 'out.mp3' }], 'Encoding MP3…')
+  if (f === 'wav') {
+    download(new Blob([wav], { type: 'audio/wav' }), name + '.wav');
+    return toast('Татаж авч байна');
+  }
+  const data = await withBusy(LOADING_ENGINE, () =>
+    runSteps(new File([wav], 'in.wav'), [{ args: ['-i', 'IN', '-c:a', 'libmp3lame', '-b:a', '192k', 'out.mp3'], output: 'out.mp3' }], 'MP3 болгож байна…')
   );
-  if (data) download(new Blob([data.buffer], { type: 'audio/mpeg' }), name + '.mp3');
+  if (data) {
+    download(new Blob([data.buffer], { type: 'audio/mpeg' }), name + '.mp3');
+    toast('Татаж авч байна');
+  }
 });
 
+/* ------------------------------------------------------------------ */
+/* Файл чирж оруулах (компьютер)                                       */
+/* ------------------------------------------------------------------ */
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  document.querySelectorAll('.hero:not([hidden])').forEach((h) => h.classList.add('drag'));
+});
+window.addEventListener('dragleave', (e) => {
+  if (!e.relatedTarget) document.querySelectorAll('.hero').forEach((h) => h.classList.remove('drag'));
+});
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  document.querySelectorAll('.hero').forEach((h) => h.classList.remove('drag'));
+  const f = e.dataTransfer && e.dataTransfer.files[0];
+  if (!f) return;
+  if (f.type.startsWith('audio/')) {
+    showTab('audio');
+    await loadAudioBlob(f, f.name);
+  } else if (f.type.startsWith('video/') || /\.(mkv|mov|mp4|webm|avi)$/i.test(f.name)) {
+    // дуу засагч дээр байвал видеоны дууг, эс бөгөөс видеог нээнэ
+    if (!$('#tab-audio').hidden) await loadAudioBlob(f, f.name);
+    else loadVideo(f);
+  } else {
+    toast('Видео эсвэл дууны файл оруулна уу.', true);
+  }
+});
+
+updateAudioView();
 updateAudioUI();

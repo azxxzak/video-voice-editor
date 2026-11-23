@@ -1,41 +1,46 @@
-# Video & Voice Editor
+# Видео ба дуу засагч
 
-A small browser-based editor. **Everything runs client-side** — files are never uploaded anywhere.
+Хөтөч дотор ажилладаг энгийн видео, дууны засвар. **Бүх зүйл таны төхөөрөмж дээр хийгдэнэ** — файл хаашаа ч илгээгдэхгүй. Утас болон компьютер дээр ажиллана.
 
-**Video tab**
-- **Crop both sides** – keep only the part between start and end.
-- **Cut the middle** – remove the part between start and end and join the rest.
-- **Extract audio only** – MP3, WAV or M4A (and send it straight to the voice editor).
-- **Remove audio** – mute a video without re-encoding.
+**Видео**
+- **Хоёр талаас нь тайрах** — эхлэл, төгсгөлийн хоорондох хэсгийг үлдээнэ.
+- **Голоос нь таслах** — хоорондох хэсгийг хасаад үлдсэнийг залгана.
+- **Дуу салгах** — MP3, WAV эсвэл M4A (шууд дуу засагч руу оруулж болно).
+- **Дуугүй болгох** — видеоны дууг хасна.
 
-**Voice / Audio tab**
-- Open an audio (or video) file, or **record from the microphone**.
-- Waveform with drag-to-select; play, trim to selection, delete selection, silence selection,
-  auto-trim silence at the ends, volume (dB), normalize, fade in/out, undo.
-- Export WAV or MP3.
+**Дуу**
+- Файл оруулах эсвэл **микрофоноор хураах**.
+- Долгион дээр чирж хэсэг сонгоно: үлдээх, устгах, дуугүй болгох, чимээгүйг автоматаар хасах,
+  дууны хэмжээ (дБ), тэгшлэх, аажим эхлэх/дуусах, буцаах.
+- MP3 эсвэл WAV болгож татна.
 
-Built with [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) (video + MP3) and the Web Audio API.
-No framework, no bundler.
+[ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) (видео, MP3) ба Web Audio API ашигласан. Framework, bundler байхгүй.
 
-## Run locally
+## Local дээр ажиллуулах
 
 ```bash
 npm install
-npm run dev        # builds public/vendor and serves http://localhost:5199
+npm run dev        # public/vendor-ийг бэлтгээд http://localhost:5199 дээр ажиллуулна
 ```
 
-## Deploy on Vercel
+## Vercel дээр байршуулах
 
-1. Import this GitHub repo in Vercel.
-2. Keep the defaults — `vercel.json` already sets
-   Install `npm install`, Build `npm run build`, Output `public`.
+1. GitHub repo-г Vercel дээр Import хийнэ.
+2. `vercel.json` нь Install `npm install`, Build `npm run build`, Output `public` гэж тохируулсан тул өөрчлөх шаардлагагүй.
 
-The build step copies the ffmpeg.wasm bundle (≈32 MB) from `node_modules` into `public/vendor`,
-so it is not stored in git.
+Build үед ffmpeg.wasm (~32 MB) `node_modules`-оос `public/vendor` руу хуулагддаг тул git-д хадгалагдахгүй.
 
-## Notes
+## Тэмдэглэл
 
-- Files are processed in browser memory; keep videos to a few hundred MB.
-- Re-encoded exports are MP4 (H.264 + AAC). "Fast export" and "Remove audio" keep the original
-  codecs, so the output stays in the source container (e.g. `.webm` stays `.webm`) and cuts snap to keyframes.
-- Microphone recording needs https or `localhost` (Vercel serves https).
+- Файл хөтөчийн санах ойд боловсруулагддаг тул хэдэн зуун MB-аас бага видео сайн.
+- Дахин кодлосон видео MP4 (H.264 + AAC) болно. «Хурдан горим» ба «Дуугүй болгох» нь анхны кодекийг хэвээр
+  хадгалдаг тул гаралт анхны формат (жишээ нь `.webm`) хэвээр үлдэнэ.
+- Микрофон ашиглахад https эсвэл `localhost` хэрэгтэй (Vercel нь https).
+
+---
+
+# English
+
+Browser-based video trimmer ("crop both sides" / "cut the middle"), audio extractor, mute tool and
+voice recorder/editor, with a Mongolian UI. Everything runs client-side (ffmpeg.wasm + Web Audio).
+`npm install && npm run dev`, deploy as a static site on Vercel (`vercel.json` included).

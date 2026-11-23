@@ -1,91 +1,149 @@
 <!doctype html>
-<html lang="en">
+<html lang="mn">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Video &amp; Voice Editor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
+  <title>Видео ба дуу засагч</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- icons -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-video" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></symbol>
+      <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+      <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></symbol>
+      <symbol id="i-mute" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3" fill="currentColor"/></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></symbol>
+      <symbol id="i-undo" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    </defs>
+  </svg>
+
   <header class="top">
-    <div class="brand">Video &amp; Voice Editor</div>
-    <nav class="tabs" role="tablist">
-      <button class="tab-btn active" data-tab="video" role="tab">Video</button>
-      <button class="tab-btn" data-tab="audio" role="tab">Voice / Audio</button>
-    </nav>
-    <div class="privacy">Files never leave your browser</div>
+    <div class="brand"><span class="logo"><svg class="ic"><use href="#i-scissors"/></svg></span> Видео ба дуу засагч</div>
+    <span class="privacy"><svg class="ic sm"><use href="#i-lock"/></svg> Файл таны төхөөрөмжөөс гарахгүй</span>
   </header>
 
+  <nav class="nav" aria-label="Үндсэн цэс">
+    <button class="nav-btn active" data-tab="video"><svg class="ic"><use href="#i-video"/></svg><span>Видео</span></button>
+    <button class="nav-btn" data-tab="audio"><svg class="ic"><use href="#i-mic"/></svg><span>Дуу</span></button>
+  </nav>
+
   <main>
-    <!-- ============================ VIDEO ============================ -->
+    <!-- ============================ ВИДЕО ============================ -->
     <section id="tab-video" class="tab">
-      <div class="card" id="vPick">
-        <label class="filebtn primary">
-          Choose a video
+
+      <div id="vEmpty" class="hero dropzone">
+        <div class="hero-ic"><svg class="ic"><use href="#i-video"/></svg></div>
+        <h1>Видеогоо оруулна уу</h1>
+        <p>Видеог таслах, дууг нь салгах, дууг нь хасах боломжтой.</p>
+        <label class="btn primary big">
+          <svg class="ic"><use href="#i-folder"/></svg> Видео сонгох
           <input type="file" id="vFile" accept="video/*,.mkv,.mov,.mp4,.webm,.avi" hidden />
         </label>
-        <span class="muted">MP4, MOV, WebM, MKV… Best under a few hundred MB (it is processed in memory).</span>
+        <p class="note">Компьютер дээр файлаа энд чирж оруулж болно. Утсан дээр галерейгаасаа сонгоно.<br />Видео хэт том (500MB-аас дээш) бол удаан ажиллаж болно.</p>
       </div>
 
       <div id="vEditor" hidden>
         <div class="card">
-          <div class="filename" id="vName"></div>
+          <div class="filebar">
+            <span class="filename" id="vName"></span>
+            <label class="btn small ghost">Өөр видео<input type="file" id="vFile2" accept="video/*,.mkv,.mov,.mp4,.webm,.avi" hidden /></label>
+          </div>
           <video id="vPlayer" controls playsinline></video>
-
-          <div class="timeline mode-keep" id="vTimeline" title="Click to seek, drag the handles to set start / end">
-            <div class="tl-range" id="vRange"></div>
-            <div class="tl-handle" id="vHS"><span>start</span></div>
-            <div class="tl-handle" id="vHE"><span>end</span></div>
-            <div class="tl-play" id="vPlayhead"></div>
-          </div>
-
-          <div class="row times">
-            <div class="timebox">
-              <span class="muted">Start</span> <b id="vStartT">0:00.00</b>
-              <button class="small" id="vSetStart">Set to playhead</button>
-            </div>
-            <div class="timebox">
-              <span class="muted">End</span> <b id="vEndT">0:00.00</b>
-              <button class="small" id="vSetEnd">Set to playhead</button>
-            </div>
-            <div class="timebox"><span class="muted">Playhead</span> <b id="vNowT">0:00.00</b></div>
-          </div>
         </div>
 
-        <div class="card">
-          <h3>Cut</h3>
+        <div class="seg" id="vTasks" role="tablist" aria-label="Юу хиймээр байна вэ?">
+          <button class="seg-btn active" data-task="cut" role="tab"><svg class="ic"><use href="#i-scissors"/></svg><span>Таслах</span></button>
+          <button class="seg-btn" data-task="audio" role="tab"><svg class="ic"><use href="#i-music"/></svg><span>Дуу салгах</span></button>
+          <button class="seg-btn" data-task="mute" role="tab"><svg class="ic"><use href="#i-mute"/></svg><span>Дуугүй болгох</span></button>
+        </div>
+
+        <!-- Таслах -->
+        <div id="task-cut" class="card">
+          <h2><span class="step">1</span> Яаж таслах вэ?</h2>
           <div class="modes">
             <label class="mode">
               <input type="radio" name="vmode" value="keep" checked />
-              <div><b>Crop both sides</b><br /><span class="muted">Keep only the part between start and end. Everything before start and after end is removed.</span></div>
+              <div>
+                <b>Хоёр талаас нь тайрах</b>
+                <div class="mini"><i class="x"></i><i class="ok"></i><i class="x"></i></div>
+                <span class="muted">Эхлэл ба төгсгөлийн <u>хоорондох</u> хэсгийг үлдээнэ. Өмнө ба хойно байгааг хасна.</span>
+              </div>
             </label>
             <label class="mode">
               <input type="radio" name="vmode" value="cut" />
-              <div><b>Cut the middle</b><br /><span class="muted">Remove the part between start and end. The beginning and the ending are joined together.</span></div>
+              <div>
+                <b>Голоос нь таслах</b>
+                <div class="mini"><i class="ok"></i><i class="x"></i><i class="ok"></i></div>
+                <span class="muted">Эхлэл ба төгсгөлийн <u>хоорондох</u> хэсгийг хасаад, үлдсэн хоёр хэсгийг залгана.</span>
+              </div>
             </label>
           </div>
+
+          <h2><span class="step">2</span> Хэсгээ тохируул</h2>
+          <p class="hint">Шугам дээр товшоод үзэх цэгээ сонгоно. <b>Хоёр бариулыг</b> чирж эхлэл, төгсгөлөө тохируулна.</p>
+          <div class="timeline mode-keep" id="vTimeline">
+            <div class="tl-range" id="vRange"></div>
+            <div class="tl-handle" id="vHS"><span>Эхлэл</span></div>
+            <div class="tl-handle" id="vHE"><span>Төгсгөл</span></div>
+            <div class="tl-play" id="vPlayhead"></div>
+          </div>
+          <div class="tl-labels"><span>0:00</span><span id="vTotalT">0:00</span></div>
+
+          <div class="timegrid">
+            <div class="timebox">
+              <span class="muted">Эхлэл</span><b id="vStartT">0:00.00</b>
+              <button class="btn small" id="vSetStart">Энд эхлүүл</button>
+            </div>
+            <div class="timebox">
+              <span class="muted">Төгсгөл</span><b id="vEndT">0:00.00</b>
+              <button class="btn small" id="vSetEnd">Энд дуусга</button>
+            </div>
+          </div>
+
           <p class="summary" id="vSummary"></p>
-          <div class="row">
-            <button id="vPreview">Preview</button>
-            <label class="check" id="vFastWrap"><input type="checkbox" id="vFast" /> Fast export (no re-encode, snaps to keyframes)</label>
-            <span class="grow"></span>
-            <button class="primary" id="vExport">Export video</button>
+          <button class="btn" id="vPreview"><svg class="ic"><use href="#i-play"/></svg> Үр дүнг урьдчилж үзэх</button>
+
+          <details class="adv">
+            <summary>Нэмэлт тохиргоо</summary>
+            <label class="check" id="vFastWrap"><input type="checkbox" id="vFast" /> Хурдан горим <span class="muted">(дахин кодчилохгүй тул маш хурдан, гэхдээ тайрах цэг хэдэн секундээр зөрж болно)</span></label>
+          </details>
+
+          <div class="actionbar">
+            <button class="btn primary big" id="vExport"><svg class="ic"><use href="#i-scissors"/></svg> Видео үүсгэх</button>
           </div>
         </div>
 
-        <div class="card">
-          <h3>Audio of this video</h3>
-          <div class="row">
-            <label>Extract audio as
-              <select id="vAudFmt">
-                <option value="mp3">MP3</option>
-                <option value="wav">WAV</option>
-                <option value="m4a">M4A (AAC)</option>
-              </select>
-            </label>
-            <button id="vExtract">Extract audio only</button>
-            <span class="grow"></span>
-            <button id="vMute">Remove audio (mute video)</button>
+        <!-- Дуу салгах -->
+        <div id="task-audio" class="card" hidden>
+          <h2>Видеоны дууг салгаж авах</h2>
+          <p class="hint">Видеоны зөвхөн дууг тусдаа файл болгоно. Дараа нь «Дуу» хэсэгт засаж болно.</p>
+          <label class="field">Файлын төрөл
+            <select id="vAudFmt">
+              <option value="mp3">MP3 — бага хэмжээтэй, хаана ч тоглоно</option>
+              <option value="wav">WAV — чанар алдагдахгүй, том хэмжээтэй</option>
+              <option value="m4a">M4A — iPhone, Mac-д тохиромжтой</option>
+            </select>
+          </label>
+          <div class="actionbar">
+            <button class="btn primary big" id="vExtract"><svg class="ic"><use href="#i-music"/></svg> Дуу салгах</button>
+          </div>
+        </div>
+
+        <!-- Дуугүй болгох -->
+        <div id="task-mute" class="card" hidden>
+          <h2>Видеоны дууг хасах</h2>
+          <p class="hint">Дүрс хэвээр үлдэж, дуу бүрмөсөн арилна. Чанар муудахгүй, хурдан хийгдэнэ.</p>
+          <div class="actionbar">
+            <button class="btn primary big" id="vMute"><svg class="ic"><use href="#i-mute"/></svg> Дуугүй болгох</button>
           </div>
         </div>
 
@@ -93,75 +151,98 @@
       </div>
     </section>
 
-    <!-- ============================ AUDIO ============================ -->
+    <!-- ============================ ДУУ ============================ -->
     <section id="tab-audio" class="tab" hidden>
-      <div class="card">
-        <div class="row">
-          <label class="filebtn">
-            Open audio / video file
+
+      <div id="aEmpty" class="hero dropzone">
+        <div class="hero-ic"><svg class="ic"><use href="#i-mic"/></svg></div>
+        <h1>Дуу хураах эсвэл засах</h1>
+        <p>Микрофоноор өөрөө хурааж болно, эсвэл бэлэн дууны файлаа оруулж болно.</p>
+        <div class="bigchoices">
+          <button id="recBtn" class="btn primary big rec"><svg class="ic"><use href="#i-mic"/></svg> Дуу хураах</button>
+          <label class="btn big">
+            <svg class="ic"><use href="#i-folder"/></svg> Файл сонгох
             <input type="file" id="aFile" accept="audio/*,video/*" hidden />
           </label>
-          <span class="muted">or</span>
-          <button id="recBtn" class="rec">● Record voice</button>
-          <div class="meter" id="recMeter" hidden><div id="recLevel"></div></div>
-          <b id="recTime" hidden>0:00</b>
         </div>
-        <div class="row small-row" id="recOpts">
-          <label class="check"><input type="checkbox" id="recNS" checked /> Noise suppression</label>
-          <label class="check"><input type="checkbox" id="recEC" checked /> Echo cancellation</label>
+        <div class="opts">
+          <label class="check"><input type="checkbox" id="recNS" checked /> Дуу чимээ багасгах</label>
+          <label class="check"><input type="checkbox" id="recEC" checked /> Цуурай арилгах</label>
         </div>
+        <p class="note">Дууны файл эсвэл видеог энд чирж оруулж болно.</p>
+      </div>
+
+      <div id="recPanel" class="card rec-panel" hidden>
+        <div class="rec-dot"></div>
+        <h2>Хурааж байна…</h2>
+        <div class="rec-time" id="recTime">0:00</div>
+        <div class="meter"><div id="recLevel"></div></div>
+        <p class="hint">Микрофонд ойр, тод дуугаар ярина уу.</p>
+        <button id="recStop" class="btn primary big"><svg class="ic"><use href="#i-stop"/></svg> Зогсоох</button>
+        <button id="recCancel" class="btn ghost">Цуцлах</button>
       </div>
 
       <div id="aEditor" hidden>
         <div class="card">
-          <div class="filename" id="aName"></div>
-          <canvas id="wave" height="180"></canvas>
-          <div class="row times">
-            <div class="timebox"><span class="muted">Selection</span> <b id="aSelT">none (drag on the waveform)</b></div>
-            <div class="timebox"><span class="muted">Cursor</span> <b id="aCurT">0:00.00</b></div>
-            <div class="timebox"><span class="muted">Length</span> <b id="aLenT">0:00.00</b></div>
+          <div class="filebar">
+            <span class="filename" id="aName"></span>
+            <span class="row-tight">
+              <button class="btn small ghost" id="recBtn2"><svg class="ic sm"><use href="#i-mic"/></svg> Шинээр хураах</button>
+              <label class="btn small ghost">Өөр файл<input type="file" id="aFile2" accept="audio/*,video/*" hidden /></label>
+            </span>
           </div>
-          <div class="row">
-            <button class="primary" id="aPlay">▶ Play</button>
-            <button id="aSelAll">Select all</button>
-            <button id="aClearSel">Clear selection</button>
-            <span class="grow"></span>
-            <button id="aUndo">↶ Undo</button>
+          <p class="hint" id="aHint">Дууны долгион дээр <b>хуруугаараа (хулганаар) чирж</b> засах хэсгээ сонгоно. Товшвол тоглуулах цэг сонгогдоно.</p>
+          <canvas id="wave"></canvas>
+          <div class="timegrid three">
+            <div class="timebox col"><span class="muted">Сонгосон</span><b id="aSelT">—</b></div>
+            <div class="timebox col"><span class="muted">Цэг</span><b id="aCurT">0:00.00</b></div>
+            <div class="timebox col"><span class="muted">Нийт</span><b id="aLenT">0:00.00</b></div>
+          </div>
+          <div class="transport">
+            <button class="btn primary big round" id="aPlay"><svg class="ic"><use href="#i-play"/></svg><span>Тоглуулах</span></button>
+            <button class="btn" id="aSelAll">Бүгдийг сонгох</button>
+            <button class="btn ghost" id="aClearSel">Болих</button>
+            <button class="btn ghost" id="aUndo"><svg class="ic sm"><use href="#i-undo"/></svg> Буцаах</button>
           </div>
         </div>
 
         <div class="card">
-          <h3>Edit</h3>
-          <div class="row">
-            <button id="aTrim" title="Keep only the selection">Trim to selection</button>
-            <button id="aCut" title="Delete the selection and join the rest">Delete selection</button>
-            <button id="aSilence" title="Replace the selection with silence">Silence selection</button>
-            <button id="aAutoTrim" title="Remove quiet parts at the start and end">Auto-trim silence at ends</button>
+          <h2><span class="step">1</span> Хэсэг таслах</h2>
+          <p class="hint" id="aSelHint">Эхлээд долгион дээр хэсэг сонгоно уу.</p>
+          <div class="toolgrid">
+            <button class="tool" id="aTrim"><b>Үлдээх</b><span>Сонгосноос бусдыг хасна</span></button>
+            <button class="tool" id="aCut"><b>Устгах</b><span>Сонгосон хэсгийг хасаад залгана</span></button>
+            <button class="tool" id="aSilence"><b>Дуугүй болгох</b><span>Сонгосон хэсгийг чимээгүй болгоно</span></button>
+            <button class="tool" id="aAutoTrim"><b>Эхлэл, төгсгөлийн чимээгүйг хасах</b><span>Автоматаар</span></button>
           </div>
-          <hr />
-          <div class="row">
-            <label>Volume <input type="number" id="aGain" value="6" step="1" style="width:5em" /> dB</label>
-            <button id="aVolume">Apply volume</button>
-            <button id="aNormalize">Normalize</button>
-          </div>
-          <div class="row">
-            <label>Fade length <input type="number" id="aFadeLen" value="1" min="0.05" step="0.1" style="width:5em" /> s</label>
-            <button id="aFadeIn">Fade in</button>
-            <button id="aFadeOut">Fade out</button>
-          </div>
-          <p class="muted tip">Volume, normalize and fades apply to the selection, or to the whole recording when nothing is selected.</p>
         </div>
 
         <div class="card">
-          <h3>Export</h3>
-          <div class="row">
-            <label>Format
-              <select id="aFmt">
-                <option value="wav">WAV (lossless)</option>
-                <option value="mp3">MP3 (192 kbps)</option>
-              </select>
+          <h2><span class="step">2</span> Дууг сайжруулах</h2>
+          <p class="hint">Хэсэг сонгосон бол зөвхөн тэр хэсэгт, сонгоогүй бол бүх дууны хувьд хийгдэнэ.</p>
+          <div class="volume">
+            <label for="aGain">Дууны хэмжээ: <b id="aGainV">+6 дБ</b></label>
+            <input type="range" id="aGain" min="-20" max="20" step="1" value="6" />
+            <button class="btn" id="aVolume">Хэрэглэх</button>
+          </div>
+          <div class="toolgrid">
+            <button class="tool" id="aNormalize"><b>Дууг тэгшлэх</b><span>Хамгийн тод, чанга түвшинд аваачна</span></button>
+            <button class="tool" id="aFadeIn"><b>Аажим эхлүүлэх</b><span>Эхлэл нь аажим чангарна</span></button>
+            <button class="tool" id="aFadeOut"><b>Аажим дуусгах</b><span>Төгсгөл нь аажим сулрана</span></button>
+            <label class="tool select"><b>Аажмын урт</b>
+              <select id="aFadeLen"><option value="0.5">0.5 секунд</option><option value="1" selected>1 секунд</option><option value="2">2 секунд</option><option value="3">3 секунд</option></select>
             </label>
-            <button class="primary" id="aExport">Download</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><span class="step">3</span> Хадгалах</h2>
+          <div class="modes two">
+            <label class="mode"><input type="radio" name="afmt" value="mp3" checked /><div><b>MP3</b><br /><span class="muted">Бага хэмжээтэй, хаана ч тоглоно</span></div></label>
+            <label class="mode"><input type="radio" name="afmt" value="wav" /><div><b>WAV</b><br /><span class="muted">Чанар алдагдахгүй, том хэмжээтэй</span></div></label>
+          </div>
+          <div class="actionbar">
+            <button class="btn primary big" id="aExport"><svg class="ic"><use href="#i-download"/></svg> Татаж авах</button>
           </div>
         </div>
       </div>
@@ -170,12 +251,13 @@
 
   <div id="busy" class="overlay" hidden>
     <div class="dialog">
-      <div id="busyLabel">Working…</div>
+      <div class="spinner"></div>
+      <div id="busyLabel">Ажиллаж байна…</div>
       <div class="bar"><div id="busyBar"></div></div>
-      <button id="busyCancel" class="small">Cancel</button>
+      <button id="busyCancel" class="btn small ghost">Цуцлах</button>
     </div>
   </div>
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" hidden role="status"></div>
 
   <script src="vendor/ffmpeg.js"></script>
   <script src="app.js"></script>
