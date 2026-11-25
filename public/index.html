@@ -127,11 +127,24 @@
           <p class="summary" id="vSummary"></p>
           <button class="btn" id="vPreview"><svg class="ic"><use href="#i-play"/></svg> Үр дүнг урьдчилж үзэх</button>
 
-          <p class="hint notice" id="vLongNote" hidden></p>
-          <details class="adv">
-            <summary>Нэмэлт тохиргоо</summary>
-            <label class="check" id="vFastWrap"><input type="checkbox" id="vFast" /> Хурдан горим <span class="muted">(дахин кодлохгүй тул маш хурдан, гэхдээ тайрах цэг 1–2 секундээр зөрж болно)</span></label>
-          </details>
+          <h2><span class="step">3</span> Хэрхэн гаргах вэ?</h2>
+          <div class="modes">
+            <label class="mode">
+              <input type="radio" name="vq" value="copy" checked />
+              <div>
+                <b>Анхны чанараар — хурдан</b>
+                <span class="muted">Чанар, хэмжээ, формат нь яг хэвээр үлдэнэ. Хэдхэн секундэд дуусна. Тайрах цэг видеоны «keyframe» дээр буух тул заримдаа хэдэн секундээр зөрнө.</span>
+              </div>
+            </label>
+            <label class="mode">
+              <input type="radio" name="vq" value="exact" />
+              <div>
+                <b>Яг секундээр</b>
+                <span class="muted">Яг таны бичсэн секундээр тайрна. Видеог дахин кодлох тул удаан, MP4 (H.264) болно.</span>
+              </div>
+            </label>
+          </div>
+          <p class="hint notice" id="vQNote" hidden></p>
 
           <div class="actionbar">
             <button class="btn primary big" id="vExport"><svg class="ic"><use href="#i-scissors"/></svg> Видео үүсгэх</button>
@@ -277,8 +290,9 @@
 
         <div class="card">
           <h2><span class="step">3</span> Хадгалах</h2>
-          <div class="modes two">
-            <label class="mode"><input type="radio" name="afmt" value="mp3" checked /><div><b>MP3</b><br /><span class="muted">Бага хэмжээтэй, хаана ч тоглоно</span></div></label>
+          <div class="modes">
+            <label class="mode"><input type="radio" name="afmt" value="orig" checked /><div><b>Анхны форматаар</b><span class="muted">Оруулсан файлынхаа формат, чанараар (жишээ нь M4A → M4A). Засвар хийгээгүй бол яг тэр файлыг нь буцаана.</span></div></label>
+            <label class="mode"><input type="radio" name="afmt" value="mp3" /><div><b>MP3</b><br /><span class="muted">Бага хэмжээтэй, хаана ч тоглоно</span></div></label>
             <label class="mode"><input type="radio" name="afmt" value="wav" /><div><b>WAV</b><br /><span class="muted">Чанар алдагдахгүй, том хэмжээтэй</span></div></label>
           </div>
           <div class="actionbar">

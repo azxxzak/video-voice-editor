@@ -177,12 +177,19 @@ async function probeMedia(file) {
     await ff.exec(['-hide_banner', '-i', path, '-t', '0', '-f', 'null', '-']);
     const log = ffLog.join('\n');
     const dm = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(log);
-    const vm = /Stream #[^\n]*?Video:\s*([a-z0-9_]+)/i.exec(log);
-    const am = /Stream #[^\n]*?Audio:\s*([a-z0-9_]+)/i.exec(log);
+    const vm = /Stream #[^\n]*?Video:\s*([a-z0-9_]+)([^\n]*)/i.exec(log);
+    const am = /Stream #[^\n]*?Audio:\s*([a-z0-9_]+)([^\n]*)/i.exec(log);
+    const res = vm && /\b(\d{2,5})x(\d{2,5})\b/.exec(vm[2]);
+    const abr = am && /(\d+) kb\/s/.exec(am[2]);
+    const ar = am && /(\d+) Hz/.exec(am[2]);
     return {
       duration: dm ? +dm[1] * 3600 + +dm[2] * 60 + parseFloat(dm[3]) : 0,
       vcodec: vm ? vm[1].toLowerCase() : null,
       acodec: am ? am[1].toLowerCase() : null,
+      width: res ? +res[1] : 0,
+      height: res ? +res[2] : 0,
+      abitrate: abr ? +abr[1] : 0,
+      arate: ar ? +ar[1] : 0,
     };
   });
 }
@@ -190,7 +197,113 @@ async function probeMedia(file) {
 /** Нэг оролтын файл дээр ffmpeg-ийн алхмуудыг дараалан ажиллуулна. 'IN' нь оролтын файл. */
 async function runSteps(file, steps, label) {
   const ff = await getFFmpeg();
-  return withInput(ff, file, (inPath) => runStepsOn(ff, inPath, steps, label));
+  const data = await withInput(ff, file, (inPath) => runStepsOn(ff, inPath, steps, label));
+  // том файл гаргасны дараа ffmpeg-ийн санах ой дүүрч дараагийн ажил гацдаг байсан
+  if (data && data.length > 50 * 1048576) resetFFmpeg();
+  return data;
+}
+
+/** MP4/MOV файлын видеоны keyframe-үүдийн цагийг (секунд) moov-оос шууд уншина. Бусад форматад null. */
+async function mp4Keyframes(file) {
+  const rd = async (pos, len) => new DataView(await file.slice(pos, pos + len).arrayBuffer());
+  let pos = 0;
+  let mv = null;
+  while (pos + 8 <= file.size) {
+    const h = await rd(pos, 16);
+    let len = h.getUint32(0);
+    const type = String.fromCharCode(h.getUint8(4), h.getUint8(5), h.getUint8(6), h.getUint8(7));
+    if (len === 1) len = Number(h.getBigUint64(8));
+    else if (len === 0) len = file.size - pos;
+    if (len < 8) return null;
+    if (type === 'moov') {
+      if (len > 300 * 1048576) return null;
+      mv = await rd(pos, len);
+      break;
+    }
+    pos += len;
+  }
+  if (!mv) return null;
+  const u32 = (o) => mv.getUint32(o);
+  const str4 = (o) => String.fromCharCode(mv.getUint8(o), mv.getUint8(o + 1), mv.getUint8(o + 2), mv.getUint8(o + 3));
+  const kids = (a, b) => {
+    const out = [];
+    for (let o = a; o + 8 <= b; ) {
+      let len = u32(o);
+      if (len === 1) len = Number(mv.getBigUint64(o + 8));
+      if (len < 8 || o + len > b) break;
+      out.push({ t: str4(o + 4), a: o, b: o + len });
+      o += len;
+    }
+    return out;
+  };
+  const pick = (list, t) => list.find((x) => x.t === t);
+  const top = kids(8, mv.byteLength);
+  const mvhd = pick(top, 'mvhd');
+  const movieScale = mvhd ? (mv.getUint8(mvhd.a + 8) === 1 ? u32(mvhd.a + 28) : u32(mvhd.a + 20)) : 0;
+  for (const trak of top.filter((x) => x.t === 'trak')) {
+    const tk = kids(trak.a + 8, trak.b);
+    const mdia = pick(tk, 'mdia');
+    if (!mdia) continue;
+    const md = kids(mdia.a + 8, mdia.b);
+    const hdlr = pick(md, 'hdlr');
+    const mdhd = pick(md, 'mdhd');
+    if (!hdlr || !mdhd || str4(hdlr.a + 16) !== 'vide') continue;
+    const scale = mv.getUint8(mdhd.a + 8) === 1 ? u32(mdhd.a + 28) : u32(mdhd.a + 20);
+    const minf = pick(md, 'minf');
+    const stbl = minf && pick(kids(minf.a + 8, minf.b), 'stbl');
+    if (!stbl || !scale) return null;
+    const sb = kids(stbl.a + 8, stbl.b);
+    const stts = pick(sb, 'stts');
+    const stss = pick(sb, 'stss');
+    const ctts = pick(sb, 'ctts');
+    if (!stts || !stss) return null; // stss байхгүй = бүх кадр keyframe (тайрахад зөрөхгүй)
+    // edit list: эхний хоосон хэсэг ба media_time шилжилт
+    let shift = 0;
+    const edts = pick(tk, 'edts');
+    const elst = edts && pick(kids(edts.a + 8, edts.b), 'elst');
+    if (elst) {
+      const v1 = mv.getUint8(elst.a + 8) === 1;
+      const n = u32(elst.a + 12);
+      for (let i = 0, o = elst.a + 16; i < n; i++, o += v1 ? 20 : 12) {
+        const segDur = v1 ? Number(mv.getBigUint64(o)) : u32(o);
+        const mediaTime = v1 ? Number(mv.getBigInt64(o + 8)) : mv.getInt32(o + 4);
+        if (mediaTime === -1) { if (movieScale) shift += segDur / movieScale; continue; }
+        shift -= mediaTime / scale;
+        break;
+      }
+    }
+    const nKeys = u32(stss.a + 12);
+    const keys = [];
+    for (let i = 0; i < nKeys; i++) keys.push(u32(stss.a + 16 + i * 4) - 1); // 0-ээс эхэлсэн дугаар
+    // кадр бүрийн dts (stts), pts шилжилт (ctts)
+    let ki = 0, sample = 0, dts = 0;
+    const dtsOf = new Map();
+    const nStts = u32(stts.a + 12);
+    for (let e = 0; e < nStts && ki < keys.length; e++) {
+      const cnt = u32(stts.a + 16 + e * 8);
+      const delta = u32(stts.a + 20 + e * 8);
+      while (ki < keys.length && keys[ki] < sample + cnt) {
+        dtsOf.set(keys[ki], dts + (keys[ki] - sample) * delta);
+        ki++;
+      }
+      sample += cnt;
+      dts += cnt * delta;
+    }
+    const ctOf = new Map();
+    if (ctts) {
+      const v1 = mv.getUint8(ctts.a + 8) === 1;
+      const nC = u32(ctts.a + 12);
+      let s0 = 0, kj = 0;
+      for (let e = 0; e < nC && kj < keys.length; e++) {
+        const cnt = u32(ctts.a + 16 + e * 8);
+        const off = v1 ? mv.getInt32(ctts.a + 20 + e * 8) : u32(ctts.a + 20 + e * 8);
+        while (kj < keys.length && keys[kj] < s0 + cnt) { ctOf.set(keys[kj], off); kj++; }
+        s0 += cnt;
+      }
+    }
+    return keys.filter((k) => dtsOf.has(k)).map((k) => (dtsOf.get(k) + (ctOf.get(k) || 0)) / scale + shift).sort((x, y) => x - y);
+  }
+  return null;
 }
 async function runStepsOn(ff, inName, steps, label) {
   const made = [];
@@ -217,8 +330,20 @@ async function runStepsOn(ff, inName, steps, label) {
 /* ------------------------------------------------------------------ */
 /* ВИДЕО                                                               */
 /* ------------------------------------------------------------------ */
-const vid = { file: null, url: null, duration: 0, start: 0, end: 0, previewing: false, playable: true, info: null, setupFor: null, probing: null };
-const LONG_VIDEO = 10 * 60; // үүнээс урт видеог дахин кодлохгүй (хөтөч дотор хэт удаан)
+const vid = { file: null, url: null, duration: 0, start: 0, end: 0, previewing: false, playable: true, info: null, setupFor: null, probing: null, keys: null, w: 0, h: 0 };
+const LONG_VIDEO = 10 * 60; // үүнээс урт видеонд «анхны дуугаараа» салгахыг санал болгоно
+const vQuality = () => document.querySelector('input[name=vq]:checked').value;
+// t-ээс өмнөх (эсвэл яг t дээрх) хамгийн ойрын keyframe
+function keyBefore(t) {
+  const k = vid.keys;
+  if (!k || !k.length) return t;
+  let lo = 0, hi = k.length - 1, best = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (k[mid] <= t + 0.01) { best = k[mid]; lo = mid + 1; } else hi = mid - 1;
+  }
+  return Math.max(0, best);
+}
 const CODEC_NAMES = { hevc: 'HEVC (H.265)', h265: 'HEVC (H.265)', av1: 'AV1', mpeg4: 'MPEG-4 Part 2', prores: 'ProRes', vp9: 'VP9', h264: 'H.264', mpeg2video: 'MPEG-2', wmv3: 'WMV', msmpeg4v3: 'DivX' };
 const player = $('#vPlayer');
 const tl = $('#vTimeline');
@@ -242,6 +367,8 @@ function loadVideo(file) {
   vid.info = null;
   vid.setupFor = null;
   vid.probing = null;
+  vid.keys = null;
+  vid.w = vid.h = 0;
   player.hidden = false;
   $('#vNoPreview').hidden = true;
   $('#vName').textContent = file.name + ' · ' + fmtSize(file.size);
@@ -304,11 +431,17 @@ function setupVideoEditor(duration) {
   for (const id of ['#vPreview', '#vSetStart', '#vSetEnd']) $(id).disabled = !vid.playable;
   // 1 цагаас урт бол «цаг» нүдийг харуулна
   document.querySelectorAll('#task-cut .hbox').forEach((el) => (el.hidden = duration < 3600));
-  const long = duration > LONG_VIDEO;
-  $('#vFast').checked = long;
-  $('#vAudFmt').value = long ? 'copy' : 'mp3';
+  $('#vAudFmt').value = duration > LONG_VIDEO ? 'copy' : 'mp3';
+  document.querySelector('input[name=vq][value=copy]').checked = true;
+  vid.w = vid.playable ? player.videoWidth : (vid.info && vid.info.width) || 0;
+  vid.h = vid.playable ? player.videoHeight : (vid.info && vid.info.height) || 0;
   vRangeError = '';
   updateVideoUI();
+  // keyframe-үүдийг уншаад «анхны чанараар» тайрах бодит цэгийг урьдчилж харуулна
+  const file = vid.file;
+  mp4Keyframes(file)
+    .then((k) => { if (vid.file === file) { vid.keys = k; updateVideoUI(); } })
+    .catch((e) => console.warn('keyframes', e));
 }
 player.addEventListener('pause', () => (vid.previewing = false));
 
@@ -333,24 +466,63 @@ function updateVideoUI() {
   $('#vHS').style.left = tlPct(start);
   $('#vHE').style.left = tlPct(end);
   syncVideoInputs();
-  const resultLen = mode === 'keep' ? end - start : duration - (end - start);
+  const exact = vQuality() === 'exact';
+  // «анхны чанараар» үед бодит тайрах цэг: эхлэл (эсвэл хасах хэсгийн төгсгөл) өмнөх keyframe руу ухарна
+  let effStart = start;
+  let effEnd = end;
+  let snap = '';
+  vid.copyImpossible = false;
+  if (!exact && vid.keys) {
+    if (mode === 'keep') {
+      const k = keyBefore(start);
+      if (start - k > 0.3) {
+        effStart = k;
+        snap = `Анхны чанараар гаргахад видео ${mmssText(k)}-ээс эхэлнэ (таны бичсэнээс ${mmssText(start - k)} эрт).`;
+      }
+    } else {
+      const k = keyBefore(end);
+      if (end - k > 0.3) {
+        if (k <= start + 0.05) {
+          vid.copyImpossible = true;
+          snap = 'Энэ хэсгийг анхны чанараар хасах боломжгүй (хоёр цэг нэг keyframe-ийн дотор байна). «Яг секундээр»-ийг сонгоно уу.';
+        } else {
+          effEnd = k;
+          snap = `Анхны чанараар гаргахад хасагдах хэсэг ${mmssText(k)}-д дуусна (таны бичсэнээс ${mmssText(end - k)} эрт), тэр хооронд нь үлдэнэ.`;
+        }
+      }
+    }
+  }
+  const resultLen = mode === 'keep' ? end - effStart : duration - (effEnd - start);
   const sum = $('#vSummary');
   sum.classList.toggle('err', !!vRangeError);
   sum.textContent = vRangeError
     ? vRangeError
     : mode === 'keep'
-      ? `Үлдэх хэсэг: ${mmssText(start)} → ${mmssText(end)} · үр дүн ${mmssText(resultLen)}`
-      : `Хасагдах хэсэг: ${mmssText(start)} → ${mmssText(end)} · үр дүн ${mmssText(resultLen)}`;
-  const forced = duration > LONG_VIDEO;
-  $('#vFast').disabled = forced;
-  if (forced) $('#vFast').checked = true;
-  $('#vFastWrap').classList.toggle('disabled', forced);
-  const note = $('#vLongNote');
-  note.hidden = !forced;
-  if (forced) {
-    note.textContent = `Видео урт (${mmssText(duration)}) тул хурдан горимоор таслана: дахин кодлохгүй, хурдан дуусна. Тайрах цэг 1–2 секундээр зөрж болно.`;
+      ? `Үлдэх хэсэг: ${mmssText(effStart)} → ${mmssText(end)} · үр дүн ${mmssText(resultLen)}`
+      : `Хасагдах хэсэг: ${mmssText(start)} → ${mmssText(effEnd)} · үр дүн ${mmssText(resultLen)}`;
+  const note = $('#vQNote');
+  let text = '';
+  if (exact) {
+    // хөтөч дотор 1080p ойролцоогоор бодит хугацаанаас 1.5 дахин хурдан кодлогддог
+    const px = (vid.w || 1280) * (vid.h || 720);
+    const speed = Math.min(20, (1.5 * 1920 * 1080) / px);
+    const mins = resultLen / speed / 60;
+    text = mins < 1
+      ? 'Яг секундээр: ойролцоогоор 1 минутаас бага хугацаа шаардана.'
+      : `Яг секундээр: ойролцоогоор ${Math.ceil(mins)} минут шаардана (компьютерийн хурдаас хамаарна).` +
+        (mins > 15 ? ' Удаан тул боломжтой бол «Анхны чанараар»-ыг ашиглана уу.' : '');
+  } else if (snap) {
+    const k = vid.keys;
+    const gap = k && k.length > 1 ? (k[k.length - 1] - k[0]) / (k.length - 1) : 0;
+    text = snap + (gap > 1 ? ` Энэ видеонд keyframe ойролцоогоор ${Math.round(gap)} секунд тутамд байна.` : '') +
+      (vid.copyImpossible ? '' : ' Яг секундээр хүсвэл «Яг секундээр»-ийг сонгоно уу.');
+  } else if (!vid.keys) {
+    text = '';
   }
+  note.hidden = !text || !!vRangeError;
+  note.textContent = text;
 }
+document.querySelectorAll('input[name=vq]').forEach((r) => r.addEventListener('change', updateVideoUI));
 document.querySelectorAll('input[name=vmode]').forEach((r) => r.addEventListener('change', updateVideoUI));
 
 // цагийн шугам (хулгана ба хуруу)
@@ -514,15 +686,16 @@ function addResult(blob, name, kind, extraBtn) {
   card.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-const X264 = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart'];
+const X264 = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart'];
 
 $('#vExport').addEventListener('click', async () => {
   if (!vid.file) return;
   const { start, end, duration } = vid;
   const mode = vMode();
   const T = (n) => n.toFixed(3);
-  const fast = $('#vFast').checked || duration > LONG_VIDEO;
-  // хурдан горим: кодекийг хэвээр хуулна (анхны формат), энгийн горим: H.264 MP4 болгож дахин кодлоно
+  const fast = vQuality() === 'copy';
+  if (fast && vid.copyImpossible) return toast('Энэ хэсгийг анхны чанараар хасах боломжгүй. «Яг секундээр»-ийг сонгоно уу.', true);
+  // анхны чанараар: кодекийг хэвээр хуулна (анхны формат), яг секундээр: H.264 MP4 болгож дахин кодлоно
   const ext = fast ? copyExt(vid.file) : 'mp4';
   const ENC = fast ? ['-c', 'copy', '-avoid_negative_ts', 'make_zero'] : X264;
   let steps;
@@ -806,6 +979,8 @@ rangeInputs.forEach((el, i) => {
   });
 });
 
+let aSrc = null; // засварын өмнөх эх файл («анхны форматаар» хадгалахад)
+let aSrcInfo = null;
 async function loadAudioBlob(blob, name) {
   return withBusy('Дууг уншиж байна…', async () => {
     let buf;
@@ -819,6 +994,10 @@ async function loadAudioBlob(blob, name) {
       buf = await actx.decodeAudioData(data.buffer.slice(0));
     }
     aname = name || 'бичлэг';
+    aSrc = { blob, name: aname };
+    aSrcInfo = null;
+    undoStack.length = 0; // шинэ файл: «өөрчлөлтгүй» эсэхийг зөв мэдэхийн тулд
+    abuf = null;
     setBuffer(buf);
     showTab('audio');
     return true;
@@ -1245,10 +1424,68 @@ function encodeWav(buf) {
   }
   return ab;
 }
+// эх файлын кодекоор дахин хадгалах тохиргоо
+function origAudioPlan(info, srcName, srcType) {
+  const br = (info.abitrate ? Math.max(32, info.abitrate) : 192) + 'k';
+  const ar = info.arate ? ['-ar', String(info.arate)] : [];
+  const sx = safeExt(srcName, '') || ((/audio\/(\w+)|video\/(\w+)/.exec(srcType || '') || [])[1] || (/video\/(\w+)/.exec(srcType || '') || [])[1] || '');
+  const c = info.acodec || '';
+  if (c === 'aac') return { ext: 'm4a', mime: 'audio/mp4', label: 'M4A (AAC)', args: ['-c:a', 'aac', '-b:a', br, ...ar] };
+  if (c === 'mp3') return { ext: 'mp3', mime: 'audio/mpeg', label: 'MP3', args: ['-c:a', 'libmp3lame', '-b:a', br, ...ar] };
+  if (c === 'opus') {
+    const ext = ['webm', 'ogg', 'opus'].includes(sx) ? sx : 'ogg';
+    return { ext, mime: ext === 'webm' ? 'audio/webm' : 'audio/ogg', label: 'Opus', args: ['-c:a', 'libopus', '-b:a', br] };
+  }
+  if (c === 'vorbis') {
+    const ext = sx === 'webm' ? 'webm' : 'ogg';
+    return { ext, mime: 'audio/' + ext, label: 'Vorbis', args: ['-c:a', 'libvorbis', '-b:a', br, ...ar] };
+  }
+  if (c === 'flac') return { ext: 'flac', mime: 'audio/flac', label: 'FLAC', args: ['-c:a', 'flac', ...ar] };
+  if (c === 'alac') return { ext: 'm4a', mime: 'audio/mp4', label: 'M4A (ALAC)', args: ['-c:a', 'alac', ...ar] };
+  if (c.startsWith('pcm_')) {
+    const codec = ['pcm_s24le', 'pcm_s32le', 'pcm_f32le', 'pcm_u8'].includes(c) ? c : 'pcm_s16le';
+    return { ext: 'wav', mime: 'audio/wav', label: 'WAV', args: ['-c:a', codec, ...ar] };
+  }
+  return { ext: 'm4a', mime: 'audio/mp4', label: 'M4A (AAC)', args: ['-c:a', 'aac', '-b:a', br, ...ar], fallback: c };
+}
+
 $('#aExport').addEventListener('click', async () => {
   if (!abuf) return;
   const f = document.querySelector('input[name=afmt]:checked').value;
   const name = baseName(aname) + '_заслаа';
+  if (f === 'orig' && aSrc) {
+    const src = aSrc;
+    const srcFile = new File([src.blob], src.name, { type: src.blob.type });
+    const res = await withBusy('Анхны форматыг шалгаж байна…', async () => {
+      const info = aSrcInfo || (aSrcInfo = await probeMedia(srcFile));
+      if (!info.acodec) throw new Error('Эх файлаас дуу олдсонгүй.');
+      // WebM гэх мэт bitrate-аа заадаггүй файлд хэмжээнээс нь тооцно (зөвхөн дуутай файлд)
+      if (!info.abitrate && !info.vcodec && info.duration > 0) {
+        info.abitrate = Math.round((srcFile.size * 8) / info.duration / 1000);
+      }
+      const plan = origAudioPlan(info, src.name, src.blob.type);
+      if (undoStack.length === 0) {
+        // засвар хийгээгүй: дууны файл бол яг тэр файлыг, видео бол дууны замыг нь дахин кодлохгүй хуулна
+        if (!info.vcodec && !plan.fallback) return { same: true };
+        const ext = plan.fallback ? 'mka' : plan.ext;
+        const data = await runSteps(srcFile, [{ args: ['-i', 'IN', '-vn', '-map', '0:a:0', '-c:a', 'copy', 'out.' + ext], output: 'out.' + ext }], 'Дууг хуулж байна…');
+        return { data, plan: { ...plan, ext, mime: plan.fallback ? 'audio/x-matroska' : plan.mime }, copied: true };
+      }
+      const wav = encodeWav(abuf);
+      const data = await runSteps(new File([wav], 'in.wav'), [{ args: ['-i', 'IN', ...plan.args, 'out.' + plan.ext], output: 'out.' + plan.ext }], `${plan.label} болгож байна…`);
+      return { data, plan };
+    });
+    if (!res) return;
+    if (res.same) {
+      const ext = safeExt(src.name, '');
+      download(src.blob, ext ? src.name : src.name + '.' + ((/\/(\w+)/.exec(src.blob.type) || [])[1] || 'webm'));
+      return toast('Засвар хийгээгүй тул эх файлыг яг тэр чигээр нь татлаа');
+    }
+    download(new Blob([res.data.buffer], { type: res.plan.mime }), (res.copied ? baseName(aname) + '_дуу' : name) + '.' + res.plan.ext);
+    return toast(res.plan.fallback
+      ? `Анхны формат (${res.plan.fallback}) дэмжигдэхгүй тул ${res.plan.label} болгож хадгаллаа`
+      : `${res.plan.label} хэлбэрээр татаж авч байна`);
+  }
   const wav = encodeWav(abuf);
   if (f === 'wav') {
     download(new Blob([wav], { type: 'audio/wav' }), name + '.wav');
