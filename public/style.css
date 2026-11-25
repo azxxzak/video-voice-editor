@@ -286,3 +286,10 @@ audio { width: 100%; }
   .rangeinputs { grid-template-columns: minmax(0, 1fr); }
 }
 .summary.err { background: color-mix(in srgb, var(--cut) 14%, var(--card)); color: var(--cut); }
+
+/* урьдчилж үзэх боломжгүй видео, урт видеоны тэмдэглэл */
+.noprev { padding: 18px 16px; border-radius: 12px; background: var(--bg); border: 1.5px dashed var(--line); line-height: 1.5; }
+.noprev b { display: block; font-size: 16px; margin-bottom: 4px; }
+.noprev .muted { display: block; margin-top: 6px; }
+.notice { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, #f5a524 16%, var(--card)); color: var(--text); }
+.hbox { display: contents; }

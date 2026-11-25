@@ -48,7 +48,7 @@
           <svg class="ic"><use href="#i-folder"/></svg> Видео сонгох
           <input type="file" id="vFile" accept="video/*,.mkv,.mov,.mp4,.webm,.avi" hidden />
         </label>
-        <p class="note">Компьютер дээр файлаа энд чирж оруулж болно. Утсан дээр галерейгаасаа сонгоно.<br />Видео хэт том (500MB-аас дээш) бол удаан ажиллаж болно.</p>
+        <p class="note">Компьютер дээр файлаа энд чирж оруулж болно. Утсан дээр галерейгаасаа сонгоно.<br />Урт, том видео ч болно — файл таны компьютерээс шууд уншигдана.</p>
       </div>
 
       <div id="vEditor" hidden>
@@ -58,6 +58,7 @@
             <label class="btn small ghost">Өөр видео<input type="file" id="vFile2" accept="video/*,.mkv,.mov,.mp4,.webm,.avi" hidden /></label>
           </div>
           <video id="vPlayer" controls playsinline></video>
+          <div class="noprev" id="vNoPreview" hidden></div>
         </div>
 
         <div class="seg" id="vTasks" role="tablist" aria-label="Юу хиймээр байна вэ?">
@@ -102,6 +103,7 @@
             <div class="rangein">
               <span class="lbl">Эхлэх</span>
               <div class="mmss">
+                <span class="hbox" hidden><input id="vFromH" type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Эхлэх цаг" /><span class="u">цаг</span></span>
                 <input id="vFromM" type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Эхлэх минут" />
                 <span class="u">мин</span>
                 <input id="vFromS" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Эхлэх секунд" />
@@ -112,6 +114,7 @@
             <div class="rangein">
               <span class="lbl">Дуусах</span>
               <div class="mmss">
+                <span class="hbox" hidden><input id="vToH" type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Дуусах цаг" /><span class="u">цаг</span></span>
                 <input id="vToM" type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Дуусах минут" />
                 <span class="u">мин</span>
                 <input id="vToS" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Дуусах секунд" />
@@ -124,9 +127,10 @@
           <p class="summary" id="vSummary"></p>
           <button class="btn" id="vPreview"><svg class="ic"><use href="#i-play"/></svg> Үр дүнг урьдчилж үзэх</button>
 
+          <p class="hint notice" id="vLongNote" hidden></p>
           <details class="adv">
             <summary>Нэмэлт тохиргоо</summary>
-            <label class="check" id="vFastWrap"><input type="checkbox" id="vFast" /> Хурдан горим <span class="muted">(дахин кодчилохгүй тул маш хурдан, гэхдээ тайрах цэг хэдэн секундээр зөрж болно)</span></label>
+            <label class="check" id="vFastWrap"><input type="checkbox" id="vFast" /> Хурдан горим <span class="muted">(дахин кодлохгүй тул маш хурдан, гэхдээ тайрах цэг 1–2 секундээр зөрж болно)</span></label>
           </details>
 
           <div class="actionbar">
@@ -140,7 +144,8 @@
           <p class="hint">Видеоны зөвхөн дууг тусдаа файл болгоно. Дараа нь «Дуу» хэсэгт засаж болно.</p>
           <label class="field">Файлын төрөл
             <select id="vAudFmt">
-              <option value="mp3">MP3 — бага хэмжээтэй, хаана ч тоглоно</option>
+              <option value="copy">Анхны дуугаараа — хамгийн хурдан, урт видеонд тохиромжтой</option>
+              <option value="mp3" selected>MP3 — бага хэмжээтэй, хаана ч тоглоно</option>
               <option value="wav">WAV — чанар алдагдахгүй, том хэмжээтэй</option>
               <option value="m4a">M4A — iPhone, Mac-д тохиромжтой</option>
             </select>

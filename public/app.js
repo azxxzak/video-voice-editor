@@ -9,10 +9,11 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const ICON = (id, cls = '') => `<svg class="ic ${cls}"><use href="#i-${id}"/></svg>`;
 
 function fmt(t) {
-  if (!isFinite(t)) t = 0;
-  const m = Math.floor(t / 60);
-  const s = t - m * 60;
-  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
+  t = isFinite(t) ? Math.round(t * 100) / 100 : 0; // 59.999 → 60 (0:60.00 гэж гаргахгүй)
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const ss = (t - h * 3600 - m * 60).toFixed(2).padStart(5, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 function fmtSize(bytes) {
   return bytes > 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
@@ -76,7 +77,7 @@ async function getFFmpeg() {
       });
       ff.on('log', ({ message }) => {
         ffLog.push(message);
-        if (ffLog.length > 40) ffLog.shift();
+        if (ffLog.length > 400) ffLog.shift();
       });
       await ff.load({
         coreURL: new URL('vendor/ffmpeg-core.js', location.href).href,
@@ -130,7 +131,11 @@ async function withBusy(label, fn) {
   } catch (err) {
     if (!cancelled) {
       console.error(err);
-      if (/ffmpeg failed/.test(String(err && err.message))) {
+      const msg = String(err && err.message ? err.message : err);
+      if (/memory|allocation|RangeError|OOM/i.test(msg)) {
+        resetFFmpeg();
+        toast('Үр дүнгийн файл хэт том болж хөтөчийн санах ой хүрсэнгүй. Арай богино хэсэг сонгоод дахин оролдоно уу.', true);
+      } else if (/ffmpeg failed/.test(msg)) {
         resetFFmpeg();
         toast('Боловсруулалт амжилтгүй боллоо. Өөр файл эсвэл MP4 хэлбэртэй видеогоор оролдоно уу.', true);
       } else {
@@ -150,11 +155,44 @@ $('#busyCancel').addEventListener('click', () => {
   toast('Цуцаллаа');
 });
 
+/** Файлыг санах ой руу хуулалгүй (хэдэн GB ч байсан) ffmpeg-д дискнээс нь шууд уншуулна. */
+let mountSeq = 0;
+async function withInput(ff, file, fn) {
+  const dir = '/in' + ++mountSeq;
+  await ff.createDir(dir);
+  await ff.mount('WORKERFS', { files: [file] }, dir);
+  try {
+    return await fn(`${dir}/${file.name}`);
+  } finally {
+    try { await ff.unmount(dir); } catch {}
+    try { await ff.deleteDir(dir); } catch {}
+  }
+}
+
+/** Видео/дууны урт, кодекийг ffmpeg-ээр уншина. */
+async function probeMedia(file) {
+  const ff = await getFFmpeg();
+  return withInput(ff, file, async (path) => {
+    ffLog.length = 0;
+    await ff.exec(['-hide_banner', '-i', path, '-t', '0', '-f', 'null', '-']);
+    const log = ffLog.join('\n');
+    const dm = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(log);
+    const vm = /Stream #[^\n]*?Video:\s*([a-z0-9_]+)/i.exec(log);
+    const am = /Stream #[^\n]*?Audio:\s*([a-z0-9_]+)/i.exec(log);
+    return {
+      duration: dm ? +dm[1] * 3600 + +dm[2] * 60 + parseFloat(dm[3]) : 0,
+      vcodec: vm ? vm[1].toLowerCase() : null,
+      acodec: am ? am[1].toLowerCase() : null,
+    };
+  });
+}
+
 /** Нэг оролтын файл дээр ffmpeg-ийн алхмуудыг дараалан ажиллуулна. 'IN' нь оролтын файл. */
 async function runSteps(file, steps, label) {
   const ff = await getFFmpeg();
-  const inName = 'input.' + safeExt(file.name, 'mp4');
-  await ff.writeFile(inName, new Uint8Array(await file.arrayBuffer()));
+  return withInput(ff, file, (inPath) => runStepsOn(ff, inPath, steps, label));
+}
+async function runStepsOn(ff, inName, steps, label) {
   const made = [];
   try {
     for (let i = 0; i < steps.length; i++) {
@@ -170,7 +208,7 @@ async function runSteps(file, steps, label) {
     }
     return await ff.readFile(made[made.length - 1]);
   } finally {
-    for (const n of [inName, ...made, 'list.txt']) {
+    for (const n of [...made, 'list.txt']) {
       try { await ff.deleteFile(n); } catch {}
     }
   }
@@ -179,7 +217,9 @@ async function runSteps(file, steps, label) {
 /* ------------------------------------------------------------------ */
 /* ВИДЕО                                                               */
 /* ------------------------------------------------------------------ */
-const vid = { file: null, url: null, duration: 0, start: 0, end: 0, previewing: false };
+const vid = { file: null, url: null, duration: 0, start: 0, end: 0, previewing: false, playable: true, info: null, setupFor: null, probing: null };
+const LONG_VIDEO = 10 * 60; // үүнээс урт видеог дахин кодлохгүй (хөтөч дотор хэт удаан)
+const CODEC_NAMES = { hevc: 'HEVC (H.265)', h265: 'HEVC (H.265)', av1: 'AV1', mpeg4: 'MPEG-4 Part 2', prores: 'ProRes', vp9: 'VP9', h264: 'H.264', mpeg2video: 'MPEG-2', wmv3: 'WMV', msmpeg4v3: 'DivX' };
 const player = $('#vPlayer');
 const tl = $('#vTimeline');
 
@@ -198,27 +238,78 @@ function loadVideo(file) {
   vid.file = file;
   vid.url = URL.createObjectURL(file);
   vid.duration = 0;
+  vid.playable = true;
+  vid.info = null;
+  vid.setupFor = null;
+  vid.probing = null;
+  player.hidden = false;
+  $('#vNoPreview').hidden = true;
   $('#vName').textContent = file.name + ' · ' + fmtSize(file.size);
   $('#vResults').innerHTML = '';
   player.src = vid.url;
   player.load();
 }
 player.addEventListener('loadedmetadata', () => {
-  if (!isFinite(player.duration) || !player.duration) {
-    toast('Видеоны уртыг уншиж чадсангүй.', true);
+  if (!vid.file || vid.setupFor === vid.file || vid.probing === vid.file) return;
+  // урт нь тодорхойгүй эсвэл зөвхөн дуу нь тоглож байвал (videoWidth 0) кодекийг шалгана
+  if (!isFinite(player.duration) || !player.duration || player.videoWidth === 0) {
+    handleUnplayable();
     return;
   }
-  vid.duration = player.duration;
-  vid.start = 0;
-  vid.end = vid.duration;
-  $('#vEmpty').hidden = true;
-  $('#vEditor').hidden = false;
-  $('#vTotalT').textContent = fmt(vid.duration);
-  updateVideoUI();
+  vid.playable = true;
+  setupVideoEditor(player.duration);
 });
 player.addEventListener('error', () => {
-  if (vid.file) toast('Энэ видеог хөтөч тоглуулж чадсангүй. MP4 (H.264) эсвэл WebM хэлбэртэй файл ашиглана уу.', true);
+  if (vid.file && vid.setupFor !== vid.file) handleUnplayable();
 });
+
+// Хөтөч тоглуулж чадахгүй видео (ихэвчлэн HEVC/H.265): урьдчилж үзэхгүйгээр засварлана
+async function handleUnplayable() {
+  const file = vid.file;
+  if (vid.probing === file || vid.setupFor === file) return;
+  vid.probing = file;
+  const info = await withBusy('Видеог шалгаж байна…', () => probeMedia(file));
+  if (vid.file !== file) return;
+  vid.probing = null;
+  if (!info || !info.duration) {
+    return toast('Энэ файлыг уншиж чадсангүй. Файл эвдэрсэн эсвэл видео биш байж магадгүй.', true);
+  }
+  if (!info.vcodec) {
+    return toast('Энэ файлд видео алга байна. Дууны файл бол «Дуу» хэсэгт нээнэ үү.', true);
+  }
+  vid.playable = false;
+  vid.info = info;
+  setupVideoEditor(info.duration);
+}
+
+function setupVideoEditor(duration) {
+  vid.setupFor = vid.file;
+  vid.duration = duration;
+  vid.start = 0;
+  vid.end = duration;
+  $('#vEmpty').hidden = true;
+  $('#vEditor').hidden = false;
+  $('#vTotalT').textContent = fmt(duration);
+  player.hidden = !vid.playable;
+  const np = $('#vNoPreview');
+  np.hidden = vid.playable;
+  if (!vid.playable) {
+    const c = vid.info && vid.info.vcodec;
+    const name = CODEC_NAMES[c] || (c ? c.toUpperCase() : 'энэ');
+    np.innerHTML = `<b>Энэ хөтөч дээр урьдчилж үзэх боломжгүй</b>` +
+      `Видео нь <b style="display:inline">${name}</b> кодектой тул энэ хөтөч тоглуулж чадахгүй байна. ` +
+      `Гэхдээ доор минут, секундээ бичээд таслах, дууг нь салгах боломжтой.` +
+      `<span class="muted">Урьдчилж үзэх бол Safari (Mac, iPhone) эсвэл Microsoft Edge дээр нээнэ үү.</span>`;
+  }
+  for (const id of ['#vPreview', '#vSetStart', '#vSetEnd']) $(id).disabled = !vid.playable;
+  // 1 цагаас урт бол «цаг» нүдийг харуулна
+  document.querySelectorAll('#task-cut .hbox').forEach((el) => (el.hidden = duration < 3600));
+  const long = duration > LONG_VIDEO;
+  $('#vFast').checked = long;
+  $('#vAudFmt').value = long ? 'copy' : 'mp3';
+  vRangeError = '';
+  updateVideoUI();
+}
 player.addEventListener('pause', () => (vid.previewing = false));
 
 // Таслах / Дуу салгах / Дуугүй болгох
@@ -250,8 +341,15 @@ function updateVideoUI() {
     : mode === 'keep'
       ? `Үлдэх хэсэг: ${mmssText(start)} → ${mmssText(end)} · үр дүн ${mmssText(resultLen)}`
       : `Хасагдах хэсэг: ${mmssText(start)} → ${mmssText(end)} · үр дүн ${mmssText(resultLen)}`;
-  $('#vFast').disabled = mode === 'cut';
-  $('#vFastWrap').classList.toggle('disabled', mode === 'cut');
+  const forced = duration > LONG_VIDEO;
+  $('#vFast').disabled = forced;
+  if (forced) $('#vFast').checked = true;
+  $('#vFastWrap').classList.toggle('disabled', forced);
+  const note = $('#vLongNote');
+  note.hidden = !forced;
+  if (forced) {
+    note.textContent = `Видео урт (${mmssText(duration)}) тул хурдан горимоор таслана: дахин кодлохгүй, хурдан дуусна. Тайрах цэг 1–2 секундээр зөрж болно.`;
+  }
 }
 document.querySelectorAll('input[name=vmode]').forEach((r) => r.addEventListener('change', updateVideoUI));
 
@@ -265,11 +363,11 @@ function tlApply(ev) {
   const t = tlTime(ev);
   if (tlDrag === 's') {
     vid.start = Math.min(t, vid.end - 0.05);
-    player.currentTime = vid.start;
+    if (vid.playable) player.currentTime = vid.start;
   } else if (tlDrag === 'e') {
     vid.end = Math.max(t, vid.start + 0.05);
-    player.currentTime = Math.max(0, vid.end - 0.05);
-  } else {
+    if (vid.playable) player.currentTime = Math.max(0, vid.end - 0.05);
+  } else if (vid.playable) {
     player.currentTime = t;
   }
   updateVideoUI();
@@ -306,10 +404,10 @@ $('#vSetEnd').addEventListener('click', () => {
 /* ---- видео: «хэдэн мин, сек-ээс хэдэн мин, сек хүртэл» ---- */
 // (splitMS, mmssText, readField, writeField нь доорх дууны хэсэгт байгаа ерөнхий функцууд)
 const VIN = {
-  from: { m: $('#vFromM'), s: $('#vFromS') },
-  to: { m: $('#vToM'), s: $('#vToS') },
+  from: { h: $('#vFromH'), m: $('#vFromM'), s: $('#vFromS') },
+  to: { h: $('#vToH'), m: $('#vToM'), s: $('#vToS') },
 };
-const vInputs = [VIN.from.m, VIN.from.s, VIN.to.m, VIN.to.s];
+const vInputs = [VIN.from.h, VIN.from.m, VIN.from.s, VIN.to.h, VIN.to.m, VIN.to.s];
 let vRangeError = '';
 const typingVideoRange = () => vInputs.includes(document.activeElement);
 
@@ -331,10 +429,12 @@ function applyVideoInputs() {
   if (isNaN(a) || isNaN(b)) {
     vRangeError = 'Зөвхөн тоо бичнэ үү. Жишээ нь 1 мин 30 сек.';
   } else if (a >= dur) {
+    VIN.from.h.classList.add('bad');
     VIN.from.m.classList.add('bad');
     VIN.from.s.classList.add('bad');
     vRangeError = `Эхлэх цаг видеоны уртаас хэтэрсэн байна. Нийт урт ${mmssText(dur)}.`;
   } else if (b <= a + 0.05) {
+    VIN.to.h.classList.add('bad');
     VIN.to.m.classList.add('bad');
     VIN.to.s.classList.add('bad');
     vRangeError = '«Дуусах» нь «Эхлэх»-ээс хойно байх ёстой.';
@@ -356,7 +456,8 @@ vInputs.forEach((el, i) => {
   el.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (vInputs[i + 1]) vInputs[i + 1].focus();
+    const next = vInputs.slice(i + 1).find((x) => !x.parentElement.hidden);
+    if (next) next.focus();
     else el.blur();
   });
 });
@@ -420,59 +521,37 @@ $('#vExport').addEventListener('click', async () => {
   const { start, end, duration } = vid;
   const mode = vMode();
   const T = (n) => n.toFixed(3);
-  let outExt = 'mp4';
+  const fast = $('#vFast').checked || duration > LONG_VIDEO;
+  // хурдан горим: кодекийг хэвээр хуулна (анхны формат), энгийн горим: H.264 MP4 болгож дахин кодлоно
+  const ext = fast ? copyExt(vid.file) : 'mp4';
+  const ENC = fast ? ['-c', 'copy', '-avoid_negative_ts', 'make_zero'] : X264;
   let steps;
 
   if (mode === 'keep') {
     if (end - start < 0.1) return toast('Сонгосон хэсэг хэт богино байна.', true);
-    if ($('#vFast').checked) {
-      outExt = copyExt(vid.file);
-      const o = 'out.' + outExt;
-      steps = [{ args: ['-ss', T(start), '-i', 'IN', '-t', T(end - start), '-c', 'copy', '-avoid_negative_ts', 'make_zero', o], output: o }];
-    } else {
-      steps = [{ args: ['-ss', T(start), '-i', 'IN', '-t', T(end - start), ...X264, 'out.mp4'], output: 'out.mp4' }];
-    }
+    steps = [{ args: ['-ss', T(start), '-i', 'IN', '-t', T(end - start), ...ENC, 'out.' + ext], output: 'out.' + ext }];
   } else {
     const hasA = start > 0.05;
     const hasB = end < duration - 0.05;
     if (!hasA && !hasB) return toast('Юу ч үлдэхгүй байна. Эхлэл эсвэл төгсгөлөө зөөнө үү.', true);
     steps = [];
-    if (hasA) steps.push({ args: ['-i', 'IN', '-t', T(start), ...X264, 'a.mp4'], output: 'a.mp4' });
-    if (hasB) steps.push({ args: ['-ss', T(end), '-i', 'IN', ...X264, 'b.mp4'], output: 'b.mp4' });
+    if (hasA) steps.push({ args: ['-i', 'IN', '-t', T(start), ...ENC, 'a.' + ext], output: 'a.' + ext });
+    if (hasB) steps.push({ args: ['-ss', T(end), '-i', 'IN', ...ENC, 'b.' + ext], output: 'b.' + ext });
     if (hasA && hasB) {
-      steps.push({ args: ['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', 'out.mp4'], output: 'out.mp4', list: "file 'a.mp4'\nfile 'b.mp4'\n" });
+      steps.push({
+        args: ['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', 'out.' + ext],
+        output: 'out.' + ext,
+        list: `file 'a.${ext}'\nfile 'b.${ext}'\n`,
+      });
     } else {
-      steps[0].args[steps[0].args.length - 1] = 'out.mp4';
-      steps[0].output = 'out.mp4';
+      steps[0].args[steps[0].args.length - 1] = 'out.' + ext;
+      steps[0].output = 'out.' + ext;
     }
   }
 
-  const data = await withBusy(LOADING_ENGINE, async () => {
-    const ff = await getFFmpeg();
-    const inName = 'input.' + safeExt(vid.file.name, 'mp4');
-    await ff.writeFile(inName, new Uint8Array(await vid.file.arrayBuffer()));
-    const made = [];
-    try {
-      for (let i = 0; i < steps.length; i++) {
-        const st = steps[i];
-        $('#busyLabel').textContent = steps.length > 1 ? `Видео үүсгэж байна… (${i + 1}/${steps.length})` : 'Видео үүсгэж байна…';
-        setBar(0);
-        progressCb = (p) => setBar((i + p) / steps.length);
-        if (st.list) await ff.writeFile('list.txt', new TextEncoder().encode(st.list));
-        ffLog.length = 0;
-        const code = await ff.exec(st.args.map((a) => (a === 'IN' ? inName : a)));
-        if (code !== 0) throw new Error('ffmpeg failed.\n' + ffLog.slice(-4).join('\n'));
-        made.push(st.output);
-      }
-      return await ff.readFile(steps[steps.length - 1].output);
-    } finally {
-      for (const n of [inName, 'a.mp4', 'b.mp4', ...made, 'list.txt']) {
-        try { await ff.deleteFile(n); } catch {}
-      }
-    }
-  });
+  const data = await withBusy(LOADING_ENGINE, () => runSteps(vid.file, steps, 'Видео үүсгэж байна…'));
   const suffix = mode === 'keep' ? '_тайрсан' : '_таслсан';
-  if (data) addResult(new Blob([data.buffer], { type: videoMime(outExt) }), baseName(vid.file.name) + suffix + '.' + outExt, 'video');
+  if (data) addResult(new Blob([data.buffer], { type: videoMime(ext) }), baseName(vid.file.name) + suffix + '.' + ext, 'video');
 });
 
 const AUD = {
@@ -481,15 +560,32 @@ const AUD = {
   m4a: { args: ['-c:a', 'aac', '-b:a', '192k'], mime: 'audio/mp4' },
 };
 
+const COPY_AUDIO = {
+  aac: ['m4a', 'audio/mp4'], alac: ['m4a', 'audio/mp4'], mp3: ['mp3', 'audio/mpeg'], opus: ['ogg', 'audio/ogg'],
+  vorbis: ['ogg', 'audio/ogg'], flac: ['flac', 'audio/flac'], ac3: ['ac3', 'audio/ac3'], eac3: ['eac3', 'audio/eac3'],
+};
 $('#vExtract').addEventListener('click', async () => {
   if (!vid.file) return;
-  const f = $('#vAudFmt').value;
-  const out = 'out.' + f;
-  const data = await withBusy(LOADING_ENGINE, () =>
-    runSteps(vid.file, [{ args: ['-i', 'IN', '-vn', ...AUD[f].args, out], output: out }], 'Дууг салгаж байна…')
-  );
+  const sel = $('#vAudFmt').value;
+  let f = sel;
+  let mime;
+  const data = await withBusy(LOADING_ENGINE, async () => {
+    let args;
+    if (sel === 'copy') {
+      const info = vid.info || (vid.info = await probeMedia(vid.file));
+      if (!info.acodec) throw new Error('Энэ видеонд дуу алга байна.');
+      const c = info.acodec.startsWith('pcm_') ? ['wav', 'audio/wav'] : COPY_AUDIO[info.acodec] || ['mka', 'audio/x-matroska'];
+      [f, mime] = c;
+      args = ['-c:a', 'copy'];
+    } else {
+      args = AUD[sel].args;
+      mime = AUD[sel].mime;
+    }
+    const out = 'out.' + f;
+    return runSteps(vid.file, [{ args: ['-i', 'IN', '-vn', '-map', '0:a:0', ...args, out], output: out }], 'Дууг салгаж байна…');
+  });
   if (!data) return;
-  const blob = new Blob([data.buffer], { type: AUD[f].mime });
+  const blob = new Blob([data.buffer], { type: mime });
   const name = baseName(vid.file.name) + '_дуу.' + f;
   const edit = document.createElement('button');
   edit.className = 'btn';
@@ -578,11 +674,13 @@ function splitMS(t) {
   if (s >= 60) { m += 1; s = 0; }
   return [m, s];
 }
-// 918.5 → "15 мин 18.5 сек", 45 → "45 сек"
+// 918.5 → "15 мин 18.5 сек", 45 → "45 сек", 5832 → "1 цаг 37 мин 12 сек"
 function mmssText(t) {
   const [m, s] = splitMS(t);
+  if (m >= 60) return `${Math.floor(m / 60)} цаг ${m % 60} мин ${s} сек`;
   return m > 0 ? `${m} мин ${s} сек` : `${s} сек`;
 }
+const hoursShown = (f) => f.h && !f.h.parentElement.hidden;
 function num(str) {
   const s = String(str).trim().replace(/,/g, '.');
   if (!s) return 0; // хоосон нүд = 0
@@ -590,26 +688,32 @@ function num(str) {
 }
 // талбар → секунд. Хоёр нүд хоёулаа хоосон бол null.
 function readField(f) {
-  if (!f.m.value.trim() && !f.s.value.trim()) {
-    f.m.classList.remove('bad');
-    f.s.classList.remove('bad');
+  const hs = hoursShown(f);
+  const boxes = hs ? [f.h, f.m, f.s] : [f.m, f.s];
+  if (boxes.every((b) => !b.value.trim())) {
+    boxes.forEach((b) => b.classList.remove('bad'));
     return null;
   }
+  const h = hs ? num(f.h.value) : 0;
   const m = num(f.m.value);
   const s = num(f.s.value);
+  if (hs) f.h.classList.toggle('bad', isNaN(h));
   f.m.classList.toggle('bad', isNaN(m));
   f.s.classList.toggle('bad', isNaN(s));
-  return isNaN(m) || isNaN(s) ? NaN : m * 60 + s;
+  return isNaN(h) || isNaN(m) || isNaN(s) ? NaN : h * 3600 + m * 60 + s;
 }
 function writeField(f, t) {
-  f.m.classList.remove('bad');
-  f.s.classList.remove('bad');
+  const hs = hoursShown(f);
+  for (const b of [f.h, f.m, f.s]) if (b) b.classList.remove('bad');
   if (t == null) {
-    f.m.value = '';
-    f.s.value = '';
+    for (const b of [f.h, f.m, f.s]) if (b) b.value = '';
     return;
   }
-  const [m, s] = splitMS(t);
+  let [m, s] = splitMS(t);
+  if (hs) {
+    f.h.value = String(Math.floor(m / 60));
+    m %= 60;
+  }
   f.m.value = String(m);
   f.s.value = String(s);
 }
