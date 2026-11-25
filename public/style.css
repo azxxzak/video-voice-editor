@@ -285,3 +285,4 @@ audio { width: 100%; }
 @media (max-width: 759px) {
   .rangeinputs { grid-template-columns: minmax(0, 1fr); }
 }
+.summary.err { background: color-mix(in srgb, var(--cut) 14%, var(--card)); color: var(--cut); }

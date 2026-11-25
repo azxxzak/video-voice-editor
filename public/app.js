@@ -241,13 +241,15 @@ function updateVideoUI() {
   $('#vRange').style.width = ((end - start) / duration) * 100 + '%';
   $('#vHS').style.left = tlPct(start);
   $('#vHE').style.left = tlPct(end);
-  $('#vStartT').textContent = fmt(start);
-  $('#vEndT').textContent = fmt(end);
+  syncVideoInputs();
   const resultLen = mode === 'keep' ? end - start : duration - (end - start);
-  $('#vSummary').textContent =
-    mode === 'keep'
-      ? `Үлдэх хэсэг: ${fmt(start)} → ${fmt(end)} · үр дүн ${fmt(resultLen)}`
-      : `Хасагдах хэсэг: ${fmt(start)} → ${fmt(end)} · үр дүн ${fmt(resultLen)}`;
+  const sum = $('#vSummary');
+  sum.classList.toggle('err', !!vRangeError);
+  sum.textContent = vRangeError
+    ? vRangeError
+    : mode === 'keep'
+      ? `Үлдэх хэсэг: ${mmssText(start)} → ${mmssText(end)} · үр дүн ${mmssText(resultLen)}`
+      : `Хасагдах хэсэг: ${mmssText(start)} → ${mmssText(end)} · үр дүн ${mmssText(resultLen)}`;
   $('#vFast').disabled = mode === 'cut';
   $('#vFastWrap').classList.toggle('disabled', mode === 'cut');
 }
@@ -299,6 +301,64 @@ $('#vSetEnd').addEventListener('click', () => {
   vid.end = clamp(player.currentTime, 0, vid.duration);
   if (vid.start >= vid.end - 0.05) vid.start = 0;
   updateVideoUI();
+});
+
+/* ---- видео: «хэдэн мин, сек-ээс хэдэн мин, сек хүртэл» ---- */
+// (splitMS, mmssText, readField, writeField нь доорх дууны хэсэгт байгаа ерөнхий функцууд)
+const VIN = {
+  from: { m: $('#vFromM'), s: $('#vFromS') },
+  to: { m: $('#vToM'), s: $('#vToS') },
+};
+const vInputs = [VIN.from.m, VIN.from.s, VIN.to.m, VIN.to.s];
+let vRangeError = '';
+const typingVideoRange = () => vInputs.includes(document.activeElement);
+
+function syncVideoInputs() {
+  // хэрэглэгч бичиж байх үед дарж бичихгүй; бичиж дуусахад зөв утгаар нь цэгцэлнэ
+  if (typingVideoRange()) return;
+  writeField(VIN.from, vid.start);
+  writeField(VIN.to, vid.end);
+  vRangeError = '';
+}
+function applyVideoInputs() {
+  if (!vid.duration) return;
+  const dur = vid.duration;
+  let a = readField(VIN.from);
+  let b = readField(VIN.to);
+  if (a === null) a = 0; // хоосон эхлэх = видеоны эхлэл
+  if (b === null) b = dur; // хоосон дуусах = видеоны төгсгөл
+  vRangeError = '';
+  if (isNaN(a) || isNaN(b)) {
+    vRangeError = 'Зөвхөн тоо бичнэ үү. Жишээ нь 1 мин 30 сек.';
+  } else if (a >= dur) {
+    VIN.from.m.classList.add('bad');
+    VIN.from.s.classList.add('bad');
+    vRangeError = `Эхлэх цаг видеоны уртаас хэтэрсэн байна. Нийт урт ${mmssText(dur)}.`;
+  } else if (b <= a + 0.05) {
+    VIN.to.m.classList.add('bad');
+    VIN.to.s.classList.add('bad');
+    vRangeError = '«Дуусах» нь «Эхлэх»-ээс хойно байх ёстой.';
+  } else {
+    vid.start = a;
+    vid.end = Math.min(dur, b); // уртаас хэтэрвэл төгсгөл хүртэл
+  }
+  updateVideoUI();
+}
+vInputs.forEach((el, i) => {
+  el.addEventListener('input', applyVideoInputs);
+  el.addEventListener('focus', () => el.select());
+  el.addEventListener('blur', () => setTimeout(() => {
+    if (!typingVideoRange()) {
+      vRangeError = ''; // буруу утгыг сүүлийн зөв утгаар нь буцаана
+      updateVideoUI();
+    }
+  }, 0));
+  el.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (vInputs[i + 1]) vInputs[i + 1].focus();
+    else el.blur();
+  });
 });
 
 $('#vPreview').addEventListener('click', () => {

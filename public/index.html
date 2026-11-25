@@ -89,7 +89,7 @@
           </div>
 
           <h2><span class="step">2</span> Хэсгээ тохируул</h2>
-          <p class="hint">Шугам дээр товшоод үзэх цэгээ сонгоно. <b>Хоёр бариулыг</b> чирж эхлэл, төгсгөлөө тохируулна.</p>
+          <p class="hint">Доор <b>хэдэн минут, хэдэн секунд</b> гэдгээ бичнэ. Эсвэл шугам дээрх <b>хоёр бариулыг</b> чирнэ, эсвэл видеог тоглуулж байгаад <b>«Одоогийн цэг»</b> дарна.</p>
           <div class="timeline mode-keep" id="vTimeline">
             <div class="tl-range" id="vRange"></div>
             <div class="tl-handle" id="vHS"><span>Эхлэл</span></div>
@@ -98,14 +98,26 @@
           </div>
           <div class="tl-labels"><span>0:00</span><span id="vTotalT">0:00</span></div>
 
-          <div class="timegrid">
-            <div class="timebox">
-              <span class="muted">Эхлэл</span><b id="vStartT">0:00.00</b>
-              <button class="btn small" id="vSetStart">Энд эхлүүл</button>
+          <div class="rangeinputs">
+            <div class="rangein">
+              <span class="lbl">Эхлэх</span>
+              <div class="mmss">
+                <input id="vFromM" type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Эхлэх минут" />
+                <span class="u">мин</span>
+                <input id="vFromS" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Эхлэх секунд" />
+                <span class="u">сек</span>
+              </div>
+              <button class="btn small" id="vSetStart" type="button">Одоогийн цэг</button>
             </div>
-            <div class="timebox">
-              <span class="muted">Төгсгөл</span><b id="vEndT">0:00.00</b>
-              <button class="btn small" id="vSetEnd">Энд дуусга</button>
+            <div class="rangein">
+              <span class="lbl">Дуусах</span>
+              <div class="mmss">
+                <input id="vToM" type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Дуусах минут" />
+                <span class="u">мин</span>
+                <input id="vToS" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Дуусах секунд" />
+                <span class="u">сек</span>
+              </div>
+              <button class="btn small" id="vSetEnd" type="button">Одоогийн цэг</button>
             </div>
           </div>
 
