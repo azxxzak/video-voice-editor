@@ -276,3 +276,12 @@ audio { width: 100%; }
 .small-note { font-size: 13px; margin: 8px 0 6px; }
 .selhint { margin: 6px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); color: var(--text); font-weight: 600; }
 .selhint.err { background: color-mix(in srgb, var(--cut) 14%, var(--card)); color: var(--cut); }
+
+/* мин / сек нүднүүд */
+.mmss { display: flex; align-items: center; gap: 6px; }
+.mmss input { flex: 1 1 0; text-align: center; padding: 8px 4px; }
+.mmss .u { color: var(--muted); font-size: 13px; font-weight: 600; flex: none; }
+.rangein .btn { width: 100%; margin-top: 4px; }
+@media (max-width: 759px) {
+  .rangeinputs { grid-template-columns: minmax(0, 1fr); }
+}

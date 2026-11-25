@@ -208,20 +208,29 @@
 
         <div class="card">
           <h2><span class="step">1</span> Хэсэг таслах</h2>
-          <p class="hint">Долгион дээр чирж сонгоно, эсвэл <b>хэдэн секундээс хэдэн секунд хүртэл</b> гэдгээ бичнэ.</p>
+          <p class="hint">Хэдэн минут, хэдэн секундээс хэдэн минут, хэдэн секунд хүртэл гэдгээ бичнэ. Эсвэл дуугаа тоглуулж байгаад <b>«Одоогийн цэг»</b> дарна.</p>
           <div class="rangeinputs">
-            <label class="rangein">
+            <div class="rangein">
               <span class="lbl">Эхлэх</span>
-              <input id="aFrom" type="text" inputmode="decimal" autocomplete="off" placeholder="жишээ 10" />
-              <span class="unit">секундээс</span>
-            </label>
-            <label class="rangein">
+              <div class="mmss">
+                <input id="aFromM" type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Эхлэх минут" />
+                <span class="u">мин</span>
+                <input id="aFromS" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Эхлэх секунд" />
+                <span class="u">сек</span>
+              </div>
+              <button class="btn small" id="aFromHere" type="button">Одоогийн цэг</button>
+            </div>
+            <div class="rangein">
               <span class="lbl">Дуусах</span>
-              <input id="aTo" type="text" inputmode="decimal" autocomplete="off" placeholder="жишээ 25" />
-              <span class="unit">секунд хүртэл</span>
-            </label>
+              <div class="mmss">
+                <input id="aToM" type="text" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Дуусах минут" />
+                <span class="u">мин</span>
+                <input id="aToS" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Дуусах секунд" />
+                <span class="u">сек</span>
+              </div>
+              <button class="btn small" id="aToHere" type="button">Одоогийн цэг</button>
+            </div>
           </div>
-          <p class="hint small-note">1 минутаас дээш бол <b>1:05</b> гэж бичиж болно (= 65 секунд).</p>
           <p class="hint selhint" id="aSelHint">Эхлээд хэсэг сонгоно уу.</p>
           <div class="toolgrid">
             <button class="tool" id="aTrim"><b>Үлдээх</b><span>Сонгосноос бусдыг хасна</span></button>

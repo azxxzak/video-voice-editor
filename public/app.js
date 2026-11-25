@@ -483,6 +483,8 @@ function setBuffer(nb) {
   abuf = nb;
   peaks = null;
   sel = null;
+  rangeDraft = false;
+  rangeError = '';
   cursor = 0;
   updateAudioView();
   updateAudioUI();
@@ -499,93 +501,146 @@ function updateAudioUI() {
   drawWave();
 }
 
-/* ---- «хэдэн секундээс хэдэн секунд хүртэл» талбар ---- */
-// "10", "10.5", "10,5", "1:05", "1:05.5", "0:01:05" → секунд
-function parseTime(str) {
-  const s = String(str).trim().replace(/,/g, '.').replace(/\s*(с|сек|секунд|s|sec)\.?$/i, '');
-  if (!s) return NaN;
-  const parts = s.split(':');
-  if (parts.length > 3) return NaN;
-  let t = 0;
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i];
-    if (!/^\d+(\.\d*)?$|^\.\d+$/.test(p)) return NaN;
-    if (i > 0 && parseFloat(p) >= 60) return NaN; // 1:75 гэх мэт буруу
-    t = t * 60 + parseFloat(p);
-  }
-  return t;
-}
-const secText = (t) => String(Math.round(t * 100) / 100);
-const fromIn = $('#aFrom');
-const toIn = $('#aTo');
+/* ---- «хэдэн мин, сек-ээс хэдэн мин, сек хүртэл» талбар ---- */
+const RIN = {
+  from: { m: $('#aFromM'), s: $('#aFromS') },
+  to: { m: $('#aToM'), s: $('#aToS') },
+};
+const rangeInputs = [RIN.from.m, RIN.from.s, RIN.to.m, RIN.to.s];
 let rangeError = '';
+let rangeDraft = false; // зөвхөн нэг тал нь бөглөгдсөн (эсвэл алдаатай) үед талбарыг арилгахгүй
+const round2 = (t) => Math.round(t * 100) / 100;
+
+function splitMS(t) {
+  t = round2(Math.max(0, t));
+  let m = Math.floor(t / 60);
+  let s = round2(t - m * 60);
+  if (s >= 60) { m += 1; s = 0; }
+  return [m, s];
+}
+// 918.5 → "15 мин 18.5 сек", 45 → "45 сек"
+function mmssText(t) {
+  const [m, s] = splitMS(t);
+  return m > 0 ? `${m} мин ${s} сек` : `${s} сек`;
+}
+function num(str) {
+  const s = String(str).trim().replace(/,/g, '.');
+  if (!s) return 0; // хоосон нүд = 0
+  return /^\d+(\.\d*)?$|^\.\d+$/.test(s) ? parseFloat(s) : NaN;
+}
+// талбар → секунд. Хоёр нүд хоёулаа хоосон бол null.
+function readField(f) {
+  if (!f.m.value.trim() && !f.s.value.trim()) {
+    f.m.classList.remove('bad');
+    f.s.classList.remove('bad');
+    return null;
+  }
+  const m = num(f.m.value);
+  const s = num(f.s.value);
+  f.m.classList.toggle('bad', isNaN(m));
+  f.s.classList.toggle('bad', isNaN(s));
+  return isNaN(m) || isNaN(s) ? NaN : m * 60 + s;
+}
+function writeField(f, t) {
+  f.m.classList.remove('bad');
+  f.s.classList.remove('bad');
+  if (t == null) {
+    f.m.value = '';
+    f.s.value = '';
+    return;
+  }
+  const [m, s] = splitMS(t);
+  f.m.value = String(m);
+  f.s.value = String(s);
+}
+const typingRange = () => rangeInputs.includes(document.activeElement);
 
 function syncRangeInputs() {
-  const hint = $('#aSelHint');
-  // хэрэглэгч бичиж байх үед талбарыг дарж бичихгүй
-  const typing = document.activeElement === fromIn || document.activeElement === toIn;
-  if (!typing) {
-    fromIn.value = sel ? secText(sel.a) : '';
-    toIn.value = sel ? secText(sel.b) : '';
-    fromIn.classList.remove('bad');
-    toIn.classList.remove('bad');
-    rangeError = '';
+  if (!typingRange()) {
+    if (sel) {
+      // 0 мин 90 сек → 1 мин 30 сек гэх мэтээр цэгцэлж харуулна
+      writeField(RIN.from, sel.a);
+      writeField(RIN.to, sel.b);
+      rangeDraft = false;
+      rangeError = '';
+    } else if (!rangeDraft) {
+      writeField(RIN.from, null);
+      writeField(RIN.to, null);
+    }
   }
+  const hint = $('#aSelHint');
+  hint.classList.toggle('err', !!rangeError);
   if (rangeError) {
     hint.textContent = rangeError;
-    hint.classList.add('err');
+  } else if (sel) {
+    hint.textContent = `Сонгосон: ${mmssText(sel.a)} → ${mmssText(sel.b)} (нийт ${mmssText(sel.b - sel.a)}). «Устгах» дарвал энэ хэсэг хасагдана.`;
+  } else if (rangeDraft) {
+    const a = readField(RIN.from);
+    hint.textContent = a != null
+      ? `Эхлэх: ${mmssText(a)}. Одоо «Дуусах»-аа оруулна уу.`
+      : `Дуусах: ${mmssText(readField(RIN.to))}. Одоо «Эхлэх»-ээ оруулна уу.`;
   } else {
-    hint.classList.remove('err');
-    hint.textContent = sel
-      ? `Сонгосон: ${secText(sel.a)} – ${secText(sel.b)} секунд (${secText(sel.b - sel.a)} секунд). Доороос «Устгах» дарвал энэ хэсэг хасагдана.`
-      : abuf
-        ? `Нийт урт ${secText(abuf.duration)} секунд. Хэсэг сонгоно уу.`
-        : 'Эхлээд хэсэг сонгоно уу.';
+    hint.textContent = abuf ? `Нийт урт ${mmssText(abuf.duration)}. Хэсэг сонгоно уу.` : 'Эхлээд хэсэг сонгоно уу.';
   }
 }
 
 function applyRangeInputs() {
   if (!abuf) return;
   const dur = abuf.duration;
-  const a = parseTime(fromIn.value);
-  const b = parseTime(toIn.value);
-  const fromBlank = !fromIn.value.trim();
-  const toBlank = !toIn.value.trim();
-  fromIn.classList.toggle('bad', !fromBlank && isNaN(a));
-  toIn.classList.toggle('bad', !toBlank && isNaN(b));
+  const a = readField(RIN.from);
+  const b = readField(RIN.to);
   rangeError = '';
-  if (fromBlank || toBlank) {
-    sel = null; // хоёулаа бичигдээгүй байна
-  } else if (isNaN(a) || isNaN(b)) {
-    rangeError = 'Тоо буруу байна. Жишээ нь 10, 12.5 эсвэл 1:05 гэж бичнэ үү.';
+  rangeDraft = false;
+  sel = null;
+  if ((a !== null && isNaN(a)) || (b !== null && isNaN(b))) {
+    rangeError = 'Зөвхөн тоо бичнэ үү. Жишээ нь 15 мин 18 сек.';
+  } else if (a === null && b === null) {
+    // хоёулаа хоосон
+  } else if (a === null || b === null) {
+    rangeDraft = true;
   } else if (a >= dur) {
-    fromIn.classList.add('bad');
-    rangeError = `Эхлэх цаг хэт их байна. Нийт урт ${secText(dur)} секунд.`;
+    RIN.from.m.classList.add('bad');
+    RIN.from.s.classList.add('bad');
+    rangeError = `Эхлэх цаг дууны уртаас хэтэрсэн байна. Нийт урт ${mmssText(dur)}.`;
   } else if (b <= a) {
-    toIn.classList.add('bad');
-    rangeError = '«Дуусах» нь «Эхлэх»-ээс их байх ёстой.';
+    RIN.to.m.classList.add('bad');
+    RIN.to.s.classList.add('bad');
+    rangeError = '«Дуусах» нь «Эхлэх»-ээс хойно байх ёстой.';
   } else {
-    // «Дуусах» нь нийт уртаас хэтэрвэл төгсгөл хүртэл гэж үзнэ
-    sel = { a: Math.max(0, a), b: Math.min(dur, b) };
+    sel = { a, b: Math.min(dur, b) }; // уртаас хэтэрвэл төгсгөл хүртэл
   }
-  if (rangeError) sel = null;
+  if (rangeError) rangeDraft = true;
   updateAudioUI();
 }
-fromIn.addEventListener('input', applyRangeInputs);
-toIn.addEventListener('input', applyRangeInputs);
-for (const el of [fromIn, toIn]) {
-  // бичиж дуусаад гарахад утгыг цэгцэлж харуулна (жишээ нь 1:05 → 65)
+
+// «Одоогийн цэг»: тоглуулж байгаа бол тоглож буй цэг, үгүй бол долгион дээр товшсон цэг
+const nowPoint = () => (playPos != null ? playPos : cursor);
+$('#aFromHere').addEventListener('click', () => {
+  if (!abuf) return;
+  writeField(RIN.from, nowPoint());
+  applyRangeInputs();
+});
+$('#aToHere').addEventListener('click', () => {
+  if (!abuf) return;
+  writeField(RIN.to, nowPoint());
+  applyRangeInputs();
+});
+
+rangeInputs.forEach((el, i) => {
+  el.addEventListener('input', applyRangeInputs);
+  el.addEventListener('focus', () => el.select());
+  // бичиж дуусаад гарахад утгыг цэгцэлнэ
   el.addEventListener('blur', () => setTimeout(() => {
-    if (document.activeElement !== fromIn && document.activeElement !== toIn && !rangeError) updateAudioUI();
+    if (!typingRange()) updateAudioUI();
   }, 0));
+  // Enter: дараагийн нүд рүү (мин → сек → дуусах мин → дуусах сек)
   el.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (el === fromIn) toIn.focus();
-      else el.blur();
-    }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (rangeInputs[i + 1]) rangeInputs[i + 1].focus();
+    else el.blur();
   });
-}
+});
 
 async function loadAudioBlob(blob, name) {
   return withBusy('Дууг уншиж байна…', async () => {
@@ -779,6 +834,8 @@ $('#aSelAll').addEventListener('click', () => {
 });
 $('#aClearSel').addEventListener('click', () => {
   sel = null;
+  rangeDraft = false;
+  rangeError = '';
   updateAudioUI();
   setPlayUI(!!curSrc);
 });
